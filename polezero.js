@@ -12,7 +12,7 @@
   const C = { pole: '#dc2626', zero: '#059669', test: '#7c3aed', cut: '#c2410c', curve: '#0f766e' };
   // s-plane geometry in viewBox units; both axes share one scale so angles are true
   const MAP = { ox: 470, oy: 372, left: 34, top: 18, w: 520 };
-  let hasZero = false, extent = 1, drag = null, model = null, wt = null, frame = 0;
+  let hasZero = false, base = 1, extent = 1, drag = null, model = null, wt = null, frame = 0;
   let last = null; // inputs of the most recent full render
 
   const texNum = v => {
@@ -23,6 +23,8 @@
   };
   const niceUp = v => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 1.5, 2, 3, 4, 5, 6, 8, 10].find(f => f * p >= v) * p; };
   const scale = () => (MAP.ox - MAP.left) / extent;          // px per rad/s
+  // Highest jω that fits comfortably, as a fraction of the real-axis extent
+  const FIT = 0.9 * (MAP.oy - MAP.top) / (MAP.ox - MAP.left);
   const X = v => MAP.ox - v * scale();                         // real-axis position of s = −v
   const Y = w => MAP.oy - w * scale();                         // imaginary-axis position of s = jω
 
@@ -62,7 +64,7 @@
     const v = read();
     if (!v) { $('stats').innerHTML = '<div class="stat warn"><span>Enter positive numbers for the pole, zero and gain.</span></div>'; return; }
     const { p: wp, z: wz, k } = v;
-    if (rescale || !drag) extent = niceUp(1.25 * Math.max(wp, hasZero ? wz : 0));
+    if (rescale || !drag) base = niceUp(1.25 * Math.max(wp, hasZero ? wz : 0));
     model = { n: hasZero ? [k, k / wz] : [k], d: [1, 1 / wp] };
     if (!(wt > 0)) wt = wp;
 
@@ -115,6 +117,9 @@
     if (!last) return;
     const { wp, wz, k, lo, hi } = last;
     wt = Math.min(hi, Math.max(lo, wt));
+    // Zoom the s-plane out (equal scales, so angles stay true) to keep jω on screen
+    extent = Math.max(base, wt / FIT);
+    const zoom = extent / base;
     const r = Engine.response(model, wt), db = 20 * Math.log10(r.mag);
     const marker = { x: wt, color: C.test, dash: [2, 3] };
     magPlot.set({ ...last.mag, vLines: last.mag.vLines.concat([marker]), points: last.mag.points.concat([{ x: wt, y: db, color: C.test }]) });
@@ -128,7 +133,12 @@
     const geo = hasZero
       ? `|H| = K₀ (ωp/ωz) · <span class="z">${eng(lz, '', 4)}</span> / <span class="p">${eng(lp, '', 4)}</span> &nbsp;·&nbsp; ∠H = <span class="z">θz ${num(tz)}°</span> − <span class="p">θp ${num(tp)}°</span>`
       : `|H| = K₀ ωp / <span class="p">|jω − p₁|</span> = ${num(k)} × ${eng(wp, '', 4)} / <span class="p">${eng(lp, '', 4)}</span> &nbsp;·&nbsp; ∠H = −<span class="p">θp</span> = −${num(tp)}°`;
-    $('test').innerHTML = head + '<br>' + geo;
+    const wLow = hasZero ? Math.min(wp, wz) : wp;
+    let note = '';
+    if (zoom > 2) note = `View zoomed out ×${num(zoom, 3)}. From this far up the axis ${hasZero ? 'the pole and zero both look' : 'the pole looks'} like ${hasZero ? 'they sit' : 'it sits'} at the origin: ` +
+      (hasZero ? 'their vectors become equal in length and angle, so |H| → K₀ωp/ωz and ∠H → 0°.' : '|jω − p₁| ≈ ω and θp → 90°, so |H| ≈ K₀ωp/ω (−20 dB per decade) and ∠H → −90°.');
+    else if (wt < 0.1 * wLow) note = `ω ≪ ${hasZero ? 'ωp, ωz' : 'ωp'}: s = jω is almost at the origin, so ${hasZero ? 'each vector length ≈ its root distance and |H| ≈ K₀' : '|jω − p₁| ≈ ωp and |H| ≈ K₀'}, ∠H ≈ 0°.`;
+    $('test').innerHTML = head + '<br>' + geo + (note ? `<div class="note">${note}</div>` : '');
   }
 
   function drawMap(wp, wz) {
@@ -154,15 +164,15 @@
       `<text x="${ox + 6}" y="${oy + 18}" font-size="12" fill="#5b6578">0</text>` +
       `<text x="${left - 18}" y="${top + 4}" font-size="12" fill="#8a94a6">s-plane · rad/s · equal scales on both axes</text>`;
 
-    // Vectors from the roots to the test point (drawn toward the true point even if it is off-scale)
-    const ty = Y(wt), off = ty < top, dotY = off ? top : ty;
+    // Vectors from the roots to the test point
+    const ty = Y(wt), dotY = ty;
     s += `<g clip-path="url(#pz-clip)">`;
     if (hasZero) s += `<line x1="${X(wz)}" y1="${oy}" x2="${ox}" y2="${ty}" stroke="${C.zero}" stroke-width="2" stroke-dasharray="6 4"/>`;
     s += `<line x1="${X(wp)}" y1="${oy}" x2="${ox}" y2="${ty}" stroke="${C.pole}" stroke-width="2"/></g>`;
     // Angle arc at the pole
     const ang = Math.atan2(wt, wp), rArc = 30;
     s += `<path d="M${X(wp) + rArc} ${oy}A${rArc} ${rArc} 0 0 0 ${X(wp) + rArc * Math.cos(ang)} ${oy - rArc * Math.sin(ang)}" fill="none" stroke="${C.pole}" stroke-width="1.5"/>` +
-      `<text x="${X(wp) + rArc + 6}" y="${oy - 8}" font-size="12" fill="${C.pole}">θp</text>`;
+      `<text x="${X(wp) + (rArc + 12) * Math.cos(ang / 2)}" y="${oy - (rArc + 12) * Math.sin(ang / 2) + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="${C.pole}">θp</text>`;
 
     s += `<g class="drag" data-drag="p"><circle cx="${X(wp)}" cy="${oy}" r="18" fill="transparent"/>` +
       `<path d="M${X(wp) - 8} ${oy - 8}l16 16m-16 0l16 -16" stroke="${C.pole}" stroke-width="3.2" stroke-linecap="round"/>` +
@@ -173,8 +183,9 @@
 
     // The test point itself, draggable up and down the imaginary axis
     s += `<g class="drag-v" data-drag="w"><circle cx="${ox}" cy="${dotY}" r="16" fill="transparent"/>` +
-      (off ? `<path d="M${ox} ${dotY - 9}l-7 12h14z" fill="${C.test}"/>` : `<circle cx="${ox}" cy="${dotY}" r="7" fill="${C.test}" stroke="#fff" stroke-width="2"/>`) +
-      `<text x="${ox - 12}" y="${dotY + (off ? 16 : 5)}" text-anchor="end" font-size="13" font-weight="600" fill="${C.test}">${off ? 'off scale ↑ ' : ''}s = j${tick(wt)}</text></g>`;
+      `<circle cx="${ox}" cy="${dotY}" r="7" fill="${C.test}" stroke="#fff" stroke-width="2"/>` +
+      `<text x="${ox - 12}" y="${dotY + 5}" text-anchor="end" font-size="13" font-weight="600" fill="${C.test}">s = j${tick(wt)}</text></g>` +
+      (extent > base * 1.01 ? `<text x="${left - 18}" y="${top + 22}" font-size="13" font-weight="700" fill="${C.test}">🔍 zoomed out ×${num(extent / base, 3)} to follow jω</text>` : '');
     $('map').innerHTML = s;
   }
 

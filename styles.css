@@ -173,3 +173,4 @@ footer { max-width: 1320px; margin: 0 auto; padding: 12px 24px 28px; color: var(
 .testline .p { color: var(--pole); font-weight: 600; }
 .testline .z { color: var(--zero); font-weight: 600; }
 #pz-map .drag-v { cursor: ns-resize; }
+.testline .note { margin-top: 6px; padding-top: 6px; border-top: 1px solid #e4def9; color: #4c3d80; font-size: 13px; }
