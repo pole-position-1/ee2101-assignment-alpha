@@ -35,7 +35,12 @@
       this.c = canvas; this.o = opts; this.data = null; this.mouse = null;
       this.base = document.createElement('canvas');
       new ResizeObserver(() => this.render()).observe(canvas);
-      canvas.addEventListener('pointermove', e => { this.mouse = this.local(e); this.overlay(); });
+      canvas.addEventListener('pointermove', e => {
+        this.mouse = this.local(e);
+        const x = this.toX(this.mouse.x);
+        if (opts.onMove && x !== null) opts.onMove(x);
+        this.overlay();
+      });
       canvas.addEventListener('pointerleave', () => { this.mouse = null; this.overlay(); });
       if (opts.onClick) canvas.addEventListener('click', e => {
         const m = this.local(e), x = this.toX(m.x);

@@ -6,11 +6,11 @@
 <title>EE2101 Assignment Alpha · Interactive Tool</title>
 <meta name="description" content="Pole-zero to Bode plot explorer and voltage-divider circuit sandbox with a signal generator, for EE2101 Assignment Alpha.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="styles.css?v=1">
+<link rel="stylesheet" href="styles.css?v=2">
 <script defer src="vendor/katex.min.js"></script>
 <script defer src="engine.js?v=1"></script>
-<script defer src="plot.js?v=1"></script>
-<script defer src="polezero.js?v=1"></script>
+<script defer src="plot.js?v=2"></script>
+<script defer src="polezero.js?v=2"></script>
 <script defer src="sandbox.js?v=1"></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
 <section id="pole-zero" class="page">
   <div class="intro">
     <h1>Pole–Zero to Bode Plot Explorer</h1>
-    <p>Drag the pole <b class="c-pole">×</b> or zero <b class="c-zero">○</b> along the negative real axis, or type exact values. Hover over the Bode plot to read values.</p>
+    <p>Drag the pole <b class="c-pole">×</b> or zero <b class="c-zero">○</b> along the negative real axis, or type exact values. Move along the Bode plot and the <b class="c-test">●</b> test point s = jω climbs the imaginary axis: the Bode plot is H(s) evaluated along that axis.</p>
   </div>
 
   <div class="grid">
@@ -36,12 +36,13 @@
         <button type="button" data-preset="pole">One Real Pole</button>
         <button type="button" data-preset="zero">Pole + Real Zero</button>
       </div>
-      <svg id="pz-map" viewBox="0 0 520 250" role="img" aria-label="s-plane pole-zero map"></svg>
+      <svg id="pz-map" viewBox="0 0 520 420" role="img" aria-label="s-plane pole-zero map"></svg>
       <div class="fields">
         <label><span>Pole &nbsp;p₁ = −</span><input id="pz-p" type="number" value="1000" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
         <label id="pz-zero-field"><span>Zero z₁ = −</span><input id="pz-z" type="number" value="4000" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
         <label><span>DC gain K₀ =</span><input id="pz-k" type="number" value="1" min="0" step="any" inputmode="decimal"><em></em></label>
       </div>
+      <div id="pz-test" class="testline"></div>
       <div id="pz-eq" class="eq"></div>
     </div>
 

@@ -1,11 +1,19 @@
 'use strict';
-/* Section 1: drag a real pole (and optional real zero) and watch the Bode plot. */
+/*
+ * Section 1: drag a real pole (and optional real zero) and watch the Bode plot.
+ * A purple test point s = jω on the imaginary axis follows the Bode cursor (and
+ * can be dragged), with vectors from the pole and zero showing where |H| and ∠H
+ * come from: the Bode plot is H(s) evaluated as s climbs the jω axis.
+ */
 (function () {
   const $ = id => document.getElementById('pz-' + id);
   const { eng, num } = Plot;
-  const TWO_PI = 2 * Math.PI, DB3 = 10 * Math.log10(2);
-  const MAP = { ox: 470, oy: 118, left: 34 }; // s-plane geometry in viewBox units
-  let hasZero = false, extent = 1, drag = null, model = null, info = null;
+  const TWO_PI = 2 * Math.PI, DB3 = 10 * Math.log10(2), DEG = 180 / Math.PI;
+  const C = { pole: '#dc2626', zero: '#059669', test: '#7c3aed', cut: '#c2410c', curve: '#0f766e' };
+  // s-plane geometry in viewBox units; both axes share one scale so angles are true
+  const MAP = { ox: 470, oy: 372, left: 34, top: 18, w: 520 };
+  let hasZero = false, extent = 1, drag = null, model = null, wt = null, frame = 0;
+  let last = null; // inputs of the most recent full render
 
   const texNum = v => {
     const a = Math.abs(v);
@@ -14,19 +22,27 @@
     return Number(m) + '\\times10^{' + Number(e) + '}';
   };
   const niceUp = v => { const p = 10 ** Math.floor(Math.log10(v)); return [1, 1.5, 2, 3, 4, 5, 6, 8, 10].find(f => f * p >= v) * p; };
+  const scale = () => (MAP.ox - MAP.left) / extent;          // px per rad/s
+  const X = v => MAP.ox - v * scale();                         // real-axis position of s = −v
+  const Y = w => MAP.oy - w * scale();                         // imaginary-axis position of s = jω
 
   const hover = w => {
     if (!model) return null;
     const r = Engine.response(model, w);
     return [
       `ω = ${eng(w, 'rad/s')}   (f = ${eng(w / TWO_PI, 'Hz')})`,
-      { text: `|H| = ${num(20 * Math.log10(r.mag))} dB   (${num(r.mag)} V/V)`, color: '#0f766e' },
-      { text: `∠H = ${num(r.phase)}°`, color: '#0f766e' },
+      { text: `|H| = ${num(20 * Math.log10(r.mag))} dB   (${num(r.mag)} V/V)`, color: C.curve },
+      { text: `∠H = ${num(r.phase)}°`, color: C.curve },
     ];
   };
+  // Moving along the Bode plot moves the test point (throttled to one update per frame)
+  const onMove = w => {
+    wt = w;
+    if (!frame) frame = requestAnimationFrame(() => { frame = 0; drawTest(); });
+  };
   const radTick = x => eng(x);
-  const magPlot = new Plot($('mag'), { xLog: true, xLabel: 'ω (rad/s)', yLabel: '|H(jω)|  (dB)', hover, xTick: radTick });
-  const phasePlot = new Plot($('phase'), { xLog: true, xLabel: 'ω (rad/s)', yLabel: '∠H(jω)  (°)', hover, xTick: radTick });
+  const magPlot = new Plot($('mag'), { xLog: true, xLabel: 'ω (rad/s)', yLabel: '|H(jω)|  (dB)', hover, onMove, xTick: radTick });
+  const phasePlot = new Plot($('phase'), { xLog: true, xLabel: 'ω (rad/s)', yLabel: '∠H(jω)  (°)', hover, onMove, xTick: radTick });
 
   function read() {
     const vals = { p: +$('p').value, z: +$('z').value, k: +$('k').value };
@@ -48,9 +64,8 @@
     const { p: wp, z: wz, k } = v;
     if (rescale || !drag) extent = niceUp(1.25 * Math.max(wp, hasZero ? wz : 0));
     model = { n: hasZero ? [k, k / wz] : [k], d: [1, 1 / wp] };
-    drawMap(wp, wz);
+    if (!(wt > 0)) wt = wp;
 
-    // Equation in canonical form
     const frac = w => `1+s/${texNum(w)}`;
     katex.render(hasZero
       ? `H(s)=K_0\\,\\dfrac{1+s/\\omega_z}{1+s/\\omega_p}=${texNum(k)}\\,\\dfrac{${frac(wz)}}{${frac(wp)}}`
@@ -67,27 +82,24 @@
     const cut = Engine.magCrossings(model, k / Math.SQRT2, lo, hi)[0];
     const w45 = Engine.phaseCrossing(model, -45, lo, hi);
     const cancelled = hasZero && Math.abs(wz - wp) <= 1e-9 * wp;
-    info = { cut, w45 };
 
     let ymin = Math.min(k0db - 10, ...db), ymax = Math.max(k0db + 5, ...db);
     const step = ymax - ymin > 90 ? 20 : 10;
     ymin = Math.floor(ymin / step) * step; ymax = Math.ceil(ymax / step) * step;
-    const vLines = [{ x: wp, color: '#dc2626', dash: [2, 4], label: 'ωp', bottom: true }];
-    if (hasZero) vLines.push({ x: wz, color: '#059669', dash: [2, 4], label: 'ωz', bottom: true, row: 1 });
-    if (cut) vLines.push({ x: cut, color: '#c2410c', dash: [6, 4], label: 'ω−3dB' });
-    magPlot.set({
-      x: [lo, hi], y: [ymin, ymax], yStep: step,
-      series: [{ x: ws, y: db, color: '#0f766e' }],
-      hLines: [{ y: k0db - DB3, color: '#c2410c', dash: [6, 4], label: 'K₀ − 3 dB' }],
-      vLines, points: cut ? [{ x: cut, y: k0db - DB3, color: '#c2410c' }] : [],
-    });
-    phasePlot.set({
-      x: [lo, hi], y: [-90, 90], yStep: 45,
-      series: [{ x: ws, y: rs.map(r => r.phase), color: '#0f766e' }],
-      hLines: [{ y: -45, color: '#c2410c', dash: [6, 4], label: '−45°' }],
-      vLines: vLines.filter(l => l.label !== 'ω−3dB').concat(w45 ? [{ x: w45, color: '#c2410c', dash: [6, 4], label: 'ω at −45°' }] : []),
-      points: w45 ? [{ x: w45, y: -45, color: '#c2410c' }] : [],
-    });
+    const vLines = [{ x: wp, color: C.pole, dash: [2, 4], label: 'ωp', bottom: true }];
+    if (hasZero) vLines.push({ x: wz, color: C.zero, dash: [2, 4], label: 'ωz', bottom: true, row: 1 });
+    last = {
+      wp, wz, k, lo, hi,
+      mag: { x: [lo, hi], y: [ymin, ymax], yStep: step, series: [{ x: ws, y: db, color: C.curve }],
+        hLines: [{ y: k0db - DB3, color: C.cut, dash: [6, 4], label: 'K₀ − 3 dB' }],
+        vLines: cut ? vLines.concat([{ x: cut, color: C.cut, dash: [6, 4], label: 'ω−3dB' }]) : vLines,
+        points: cut ? [{ x: cut, y: k0db - DB3, color: C.cut }] : [] },
+      phase: { x: [lo, hi], y: [-90, 90], yStep: 45, series: [{ x: ws, y: rs.map(r => r.phase), color: C.curve }],
+        hLines: [{ y: -45, color: C.cut, dash: [6, 4], label: '−45°' }],
+        vLines: w45 ? vLines.concat([{ x: w45, color: C.cut, dash: [6, 4], label: 'ω at −45°' }]) : vLines,
+        points: w45 ? [{ x: w45, y: -45, color: C.cut }] : [] },
+    };
+    drawTest();
 
     const stat = (label, value, cls = '') => `<div class="stat ${cls}"><b>${label}</b><span>${value}</span></div>`;
     $('stats').innerHTML =
@@ -98,35 +110,80 @@
       (cancelled ? stat('Pole–zero cancellation', 'Flat: |H| = K₀ and ∠H = 0° at every ω', 'note') : '');
   }
 
+  // Redraws everything that depends on the test frequency wt: the s-plane and the Bode markers.
+  function drawTest() {
+    if (!last) return;
+    const { wp, wz, k, lo, hi } = last;
+    wt = Math.min(hi, Math.max(lo, wt));
+    const r = Engine.response(model, wt), db = 20 * Math.log10(r.mag);
+    const marker = { x: wt, color: C.test, dash: [2, 3] };
+    magPlot.set({ ...last.mag, vLines: last.mag.vLines.concat([marker]), points: last.mag.points.concat([{ x: wt, y: db, color: C.test }]) });
+    phasePlot.set({ ...last.phase, vLines: last.phase.vLines.concat([marker]), points: last.phase.points.concat([{ x: wt, y: r.phase, color: C.test }]) });
+    drawMap(wp, wz);
+
+    // Geometry readout: lengths and angles of the vectors from each root to jω
+    const lp = Math.hypot(wp, wt), tp = Math.atan2(wt, wp) * DEG;
+    const lz = Math.hypot(wz, wt), tz = Math.atan2(wt, wz) * DEG;
+    const head = `<b>●</b> s = j${eng(wt, 'rad/s', 4)} &nbsp;→&nbsp; |H(jω)| = ${num(r.mag)} (${num(db)} dB), &nbsp;∠H = ${num(r.phase)}°`;
+    const geo = hasZero
+      ? `|H| = K₀ (ωp/ωz) · <span class="z">${eng(lz, '', 4)}</span> / <span class="p">${eng(lp, '', 4)}</span> &nbsp;·&nbsp; ∠H = <span class="z">θz ${num(tz)}°</span> − <span class="p">θp ${num(tp)}°</span>`
+      : `|H| = K₀ ωp / <span class="p">|jω − p₁|</span> = ${num(k)} × ${eng(wp, '', 4)} / <span class="p">${eng(lp, '', 4)}</span> &nbsp;·&nbsp; ∠H = −<span class="p">θp</span> = −${num(tp)}°`;
+    $('test').innerHTML = head + '<br>' + geo;
+  }
+
   function drawMap(wp, wz) {
-    const { ox, oy, left } = MAP, X = v => ox - v / extent * (ox - left);
-    const tick = Plot.eng;
+    const { ox, oy, left, top, w: W } = MAP, tick = Plot.eng;
     const raw = extent / 4, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
     const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
-    let s = '<rect width="520" height="250" fill="#fff"/>';
+    const wMax = (oy - top) / scale();
+    let s = `<defs><clipPath id="pz-clip"><rect x="0" y="${top - 6}" width="${W}" height="${oy - top + 40}"/></clipPath></defs><rect width="${W}" height="420" fill="#fff"/>`;
     for (let v = step; v <= extent * 1.0001; v += step) {
-      s += `<line x1="${X(v)}" y1="14" x2="${X(v)}" y2="${oy + 92}" stroke="#eef1f5"/>` +
-        `<text x="${X(v)}" y="${oy + 110}" text-anchor="middle" font-size="12" fill="#5b6578">−${tick(v)}</text>`;
+      s += `<line x1="${X(v)}" y1="${top}" x2="${X(v)}" y2="${oy}" stroke="#eef1f5"/>` +
+        `<text x="${X(v)}" y="${oy + 20}" text-anchor="middle" font-size="12" fill="#5b6578">−${tick(v)}</text>`;
+    }
+    for (let v = step; v <= wMax * 1.0001; v += step) {
+      s += `<line x1="${left}" y1="${Y(v)}" x2="${ox}" y2="${Y(v)}" stroke="#eef1f5"/>` +
+        `<text x="${ox + 7}" y="${Y(v) + 4}" font-size="12" fill="#5b6578">j${tick(v)}</text>`;
     }
     s += `<line x1="14" y1="${oy}" x2="508" y2="${oy}" stroke="#7d879a" stroke-width="1.4"/>` +
       `<path d="M508 ${oy}l-8 -4v8z" fill="#7d879a"/>` +
-      `<line x1="${ox}" y1="${oy + 96}" x2="${ox}" y2="10" stroke="#7d879a" stroke-width="1.4"/>` +
-      `<path d="M${ox} 8l-4 8h8z" fill="#7d879a"/>` +
-      `<text x="${ox + 8}" y="20" font-size="14" fill="#3c4658" font-style="italic">jω</text>` +
-      `<text x="505" y="${oy - 8}" font-size="14" fill="#3c4658" font-style="italic" text-anchor="end">σ</text>` +
-      `<text x="${ox + 6}" y="${oy + 16}" font-size="12" fill="#5b6578">0</text>` +
-      `<text x="${left}" y="${oy + 128}" font-size="12" fill="#8a94a6">rad/s · stable left half-plane</text>`;
+      `<line x1="${ox}" y1="${oy + 12}" x2="${ox}" y2="${top - 8}" stroke="#7d879a" stroke-width="1.4"/>` +
+      `<path d="M${ox} ${top - 10}l-4 8h8z" fill="#7d879a"/>` +
+      `<text x="${ox - 8}" y="${top + 2}" font-size="15" fill="#3c4658" font-style="italic" text-anchor="end">jω</text>` +
+      `<text x="505" y="${oy - 8}" font-size="15" fill="#3c4658" font-style="italic" text-anchor="end">σ</text>` +
+      `<text x="${ox + 6}" y="${oy + 18}" font-size="12" fill="#5b6578">0</text>` +
+      `<text x="${left - 18}" y="${top + 4}" font-size="12" fill="#8a94a6">s-plane · rad/s · equal scales on both axes</text>`;
+
+    // Vectors from the roots to the test point (drawn toward the true point even if it is off-scale)
+    const ty = Y(wt), off = ty < top, dotY = off ? top : ty;
+    s += `<g clip-path="url(#pz-clip)">`;
+    if (hasZero) s += `<line x1="${X(wz)}" y1="${oy}" x2="${ox}" y2="${ty}" stroke="${C.zero}" stroke-width="2" stroke-dasharray="6 4"/>`;
+    s += `<line x1="${X(wp)}" y1="${oy}" x2="${ox}" y2="${ty}" stroke="${C.pole}" stroke-width="2"/></g>`;
+    // Angle arc at the pole
+    const ang = Math.atan2(wt, wp), rArc = 30;
+    s += `<path d="M${X(wp) + rArc} ${oy}A${rArc} ${rArc} 0 0 0 ${X(wp) + rArc * Math.cos(ang)} ${oy - rArc * Math.sin(ang)}" fill="none" stroke="${C.pole}" stroke-width="1.5"/>` +
+      `<text x="${X(wp) + rArc + 6}" y="${oy - 8}" font-size="12" fill="${C.pole}">θp</text>`;
+
     s += `<g class="drag" data-drag="p"><circle cx="${X(wp)}" cy="${oy}" r="18" fill="transparent"/>` +
-      `<path d="M${X(wp) - 8} ${oy - 8}l16 16m-16 0l16 -16" stroke="#dc2626" stroke-width="3.2" stroke-linecap="round"/>` +
-      `<text x="${X(wp)}" y="${oy - 18}" text-anchor="middle" font-size="13" font-weight="600" fill="#dc2626">p₁ = −${tick(wp)}</text></g>`;
+      `<path d="M${X(wp) - 8} ${oy - 8}l16 16m-16 0l16 -16" stroke="${C.pole}" stroke-width="3.2" stroke-linecap="round"/>` +
+      `<text x="${X(wp)}" y="${oy + 36}" text-anchor="middle" font-size="13" font-weight="600" fill="${C.pole}">p₁ = −${tick(wp)}</text></g>`;
     if (hasZero) s += `<g class="drag" data-drag="z"><circle cx="${X(wz)}" cy="${oy}" r="16" fill="transparent"/>` +
-      `<circle cx="${X(wz)}" cy="${oy}" r="9" fill="none" stroke="#059669" stroke-width="3"/>` +
-      `<text x="${X(wz)}" y="${oy + 32}" text-anchor="middle" font-size="13" font-weight="600" fill="#059669">z₁ = −${tick(wz)}</text></g>`;
+      `<circle cx="${X(wz)}" cy="${oy}" r="9" fill="#fff" fill-opacity=".6" stroke="${C.zero}" stroke-width="3"/>` +
+      `<text x="${X(wz)}" y="${oy - 16}" text-anchor="middle" font-size="13" font-weight="600" fill="${C.zero}">z₁ = −${tick(wz)}</text></g>`;
+
+    // The test point itself, draggable up and down the imaginary axis
+    s += `<g class="drag-v" data-drag="w"><circle cx="${ox}" cy="${dotY}" r="16" fill="transparent"/>` +
+      (off ? `<path d="M${ox} ${dotY - 9}l-7 12h14z" fill="${C.test}"/>` : `<circle cx="${ox}" cy="${dotY}" r="7" fill="${C.test}" stroke="#fff" stroke-width="2"/>`) +
+      `<text x="${ox - 12}" y="${dotY + (off ? 16 : 5)}" text-anchor="end" font-size="13" font-weight="600" fill="${C.test}">${off ? 'off scale ↑ ' : ''}s = j${tick(wt)}</text></g>`;
     $('map').innerHTML = s;
   }
 
-  // Dragging on the s-plane
+  // Dragging on the s-plane: pole and zero move horizontally, the test point vertically
   const map = $('map');
+  const svgPoint = e => {
+    let q = map.createSVGPoint(); q.x = e.clientX; q.y = e.clientY;
+    return q.matrixTransform(map.getScreenCTM().inverse());
+  };
   map.addEventListener('pointerdown', e => {
     const g = e.target.closest('[data-drag]');
     if (!g) return;
@@ -134,9 +191,13 @@
   });
   map.addEventListener('pointermove', e => {
     if (!drag) return;
-    let q = map.createSVGPoint(); q.x = e.clientX; q.y = e.clientY;
-    q = q.matrixTransform(map.getScreenCTM().inverse());
-    let v = (MAP.ox - q.x) / (MAP.ox - MAP.left) * extent;
+    const q = svgPoint(e);
+    if (drag === 'w') {
+      wt = Math.max(1e-3 * extent, (MAP.oy - Math.max(MAP.top, Math.min(MAP.oy, q.y))) / scale());
+      drawTest();
+      return;
+    }
+    let v = (MAP.ox - q.x) / scale();
     v = Math.min(extent, Math.max(extent * 0.004, v));
     v = Number(v.toPrecision(3));
     const other = +$(drag === 'p' ? 'z' : 'p').value;
@@ -144,14 +205,14 @@
     $(drag).value = v;
     render(false);
   });
-  const end = () => { if (drag) { drag = null; render(true); } };
+  const end = () => { if (drag) { const was = drag; drag = null; if (was !== 'w') render(true); } };
   map.addEventListener('pointerup', end);
   map.addEventListener('pointercancel', end);
 
   ['p', 'z', 'k'].forEach(id => $(id).addEventListener('input', () => render(true)));
   document.querySelectorAll('#pz-preset button').forEach(b => b.addEventListener('click', () => {
     hasZero = b.dataset.preset === 'zero';
-    if (!hasZero) { $('p').value = 1000; $('k').value = 1; }
+    if (!hasZero) { $('p').value = 1000; $('k').value = 1; wt = 1000; }
     else if (!(+$('z').value > 0)) $('z').value = 4 * (+$('p').value || 1000);
     render(true);
   }));

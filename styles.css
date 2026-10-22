@@ -167,3 +167,9 @@ footer { max-width: 1320px; margin: 0 auto; padding: 12px 24px 28px; color: var(
   body { background: #fff; }
 }
 .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.c-test { color: var(--test); }
+.testline { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: #f5f3ff; color: #3b2a6b; font-size: 14px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.testline b { color: var(--test); }
+.testline .p { color: var(--pole); font-weight: 600; }
+.testline .z { color: var(--zero); font-weight: 600; }
+#pz-map .drag-v { cursor: ns-resize; }
