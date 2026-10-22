@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EE2101 Assignment Alpha · Interactive Tool</title>
+<meta name="description" content="Pole-zero to Bode plot explorer and voltage-divider circuit sandbox with a signal generator, for EE2101 Assignment Alpha.">
+<link rel="stylesheet" href="vendor/katex.min.css">
+<link rel="stylesheet" href="styles.css?v=1">
+<script defer src="vendor/katex.min.js"></script>
+<script defer src="engine.js?v=1"></script>
+<script defer src="plot.js?v=1"></script>
+<script defer src="polezero.js?v=1"></script>
+<script defer src="sandbox.js?v=1"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="course">EE2101</span> Assignment Alpha</div>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#pole-zero" data-tab="pole-zero"><span class="num">1</span> Pole–Zero → Bode</a>
+    <a href="#sandbox" data-tab="sandbox"><span class="num">2</span> Circuit Sandbox</a>
+  </nav>
+</header>
+
+<main>
+<!-- ============ Section 1: pole-zero explorer ============ -->
+<section id="pole-zero" class="page">
+  <div class="intro">
+    <h1>Pole–Zero to Bode Plot Explorer</h1>
+    <p>Drag the pole <b class="c-pole">×</b> or zero <b class="c-zero">○</b> along the negative real axis, or type exact values. Hover over the Bode plot to read values.</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="seg" id="pz-preset" role="group" aria-label="Preset">
+        <button type="button" data-preset="pole">One Real Pole</button>
+        <button type="button" data-preset="zero">Pole + Real Zero</button>
+      </div>
+      <svg id="pz-map" viewBox="0 0 520 250" role="img" aria-label="s-plane pole-zero map"></svg>
+      <div class="fields">
+        <label><span>Pole &nbsp;p₁ = −</span><input id="pz-p" type="number" value="1000" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
+        <label id="pz-zero-field"><span>Zero z₁ = −</span><input id="pz-z" type="number" value="4000" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
+        <label><span>DC gain K₀ =</span><input id="pz-k" type="number" value="1" min="0" step="any" inputmode="decimal"><em></em></label>
+      </div>
+      <div id="pz-eq" class="eq"></div>
+    </div>
+
+    <div class="card">
+      <div class="stats" id="pz-stats"></div>
+      <canvas id="pz-mag" class="plot"></canvas>
+      <canvas id="pz-phase" class="plot"></canvas>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Section 2: circuit sandbox + signal generator ============ -->
+<section id="sandbox" class="page" hidden>
+  <div class="intro">
+    <h1>Circuit Sandbox &amp; Signal Generator</h1>
+    <p>Build the two arms of the voltage divider <span class="nowrap">H(s) = Z₂ / (Z₁ + Z₂)</span>, then choose an input signal. Everything updates as you type.</p>
+    <div class="bar">
+      <span class="bar-label">Start from</span>
+      <button type="button" class="chip" data-load="fig1">Fig. 1 · RC divider</button>
+      <button type="button" class="chip" data-load="fig2">Fig. 2 · 10× probe</button>
+      <button type="button" class="chip" data-load="empty">Empty</button>
+      <span class="spacer"></span>
+      <span class="bar-label">Frequency in</span>
+      <div class="seg small" id="sb-unit" role="group" aria-label="Frequency unit">
+        <button type="button" data-unit="rad">rad/s</button>
+        <button type="button" data-unit="hz">Hz</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Circuit</h2>
+      <svg id="sb-schematic" viewBox="0 0 800 300" role="img" aria-label="Circuit schematic"></svg>
+      <div class="branches">
+        <div class="branch" data-branch="1">
+          <div class="branch-head">
+            <div><b>Z₁</b> <small>series arm, V<sub>in</sub> → V<sub>out</sub></small></div>
+            <div class="seg small" role="group" aria-label="Z1 connection"><button type="button" data-mode="series">Series</button><button type="button" data-mode="parallel">Parallel</button></div>
+          </div>
+          <div class="rows"></div>
+          <div class="adds"><button type="button" data-add="R">+ R</button><button type="button" data-add="C">+ C</button><button type="button" data-add="L">+ L</button></div>
+        </div>
+        <div class="branch" data-branch="2">
+          <div class="branch-head">
+            <div><b>Z₂</b> <small>shunt arm, V<sub>out</sub> → ground</small></div>
+            <div class="seg small" role="group" aria-label="Z2 connection"><button type="button" data-mode="series">Series</button><button type="button" data-mode="parallel">Parallel</button></div>
+          </div>
+          <div class="rows"></div>
+          <div class="adds"><button type="button" data-add="R">+ R</button><button type="button" data-add="C">+ C</button><button type="button" data-add="L">+ L</button></div>
+        </div>
+      </div>
+      <div id="sb-status" class="status" role="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Transfer function &amp; Bode plot</h2>
+      <div id="sb-eq" class="eq"></div>
+      <div class="stats" id="sb-stats"></div>
+      <canvas id="sb-mag" class="plot"></canvas>
+      <canvas id="sb-phase" class="plot"></canvas>
+      <p class="hint">Click on the Bode plot to send that frequency to the signal generator.</p>
+    </div>
+  </div>
+
+  <div class="card wide">
+    <h2>Signal generator &amp; response</h2>
+    <div class="gen">
+      <div class="seg" id="sb-type" role="group" aria-label="Input signal">
+        <button type="button" data-type="step">Step</button>
+        <button type="button" data-type="impulse">Impulse</button>
+        <button type="button" data-type="sine">Sine</button>
+        <button type="button" data-type="cosine">Cosine</button>
+        <button type="button" data-type="square">Square</button>
+      </div>
+      <div class="gen-fields">
+        <label><span id="sb-amp-label">Amplitude A</span><input id="sb-amp" type="number" value="1" step="any" inputmode="decimal"><em id="sb-amp-unit">V</em></label>
+        <label class="needs-freq"><span id="sb-f-label">Frequency</span><input id="sb-f" type="number" min="0" step="any" inputmode="decimal"><em id="sb-f-unit">rad/s</em></label>
+        <span class="needs-freq quick">
+          <button type="button" class="chip" id="sb-at-cut">at −3 dB</button>
+          <button type="button" class="chip" id="sb-at-10">10 × −3 dB</button>
+        </span>
+        <label><span>Window</span><input id="sb-win" type="number" min="0" step="any" inputmode="decimal">
+          <select id="sb-win-unit" aria-label="Window unit"><option value="0.000001">µs</option><option value="0.001">ms</option><option value="1">s</option></select>
+          <button type="button" class="chip" id="sb-auto" title="Choose a window that shows the transient and steady state">Auto</button>
+        </label>
+        <label class="check"><input id="sb-x10" type="checkbox"> Show output ×10</label>
+      </div>
+    </div>
+    <div id="sb-input-eq" class="eq left"></div>
+    <div class="legend"><span><span class="key in"></span>Input v<sub>in</sub>(t)</span><span><span class="key out"></span><span id="sb-out-label">Output v<sub>out</sub>(t)</span></span></div>
+    <canvas id="sb-time" class="plot tall"></canvas>
+    <div class="stats" id="sb-time-stats"></div>
+  </div>
+</section>
+</main>
+
+<footer>Ideal R, L, C components; the circuit starts with no stored energy and every input is switched on at t = 0. Waveforms are exact solutions, not numerical approximations.</footer>
+
+<script>
+// Tab switching via the URL hash so each section can be linked directly.
+(function () {
+  function show() {
+    var id = location.hash === '#sandbox' ? 'sandbox' : 'pole-zero';
+    document.querySelectorAll('.page').forEach(function (p) { p.hidden = p.id !== id; });
+    document.querySelectorAll('[data-tab]').forEach(function (a) { a.classList.toggle('on', a.dataset.tab === id); });
+  }
+  window.addEventListener('hashchange', function () { show(); window.scrollTo(0, 0); });
+  show();
+})();
+</script>
+</body>
+</html>
