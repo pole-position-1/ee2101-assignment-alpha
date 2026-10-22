@@ -98,7 +98,7 @@
     const sym = (it, name, x, y, vertical) =>
       `<g transform="translate(${x} ${y})${vertical ? ' rotate(90)' : ''}"><rect x="-24" y="-15" width="48" height="30" fill="#fff" stroke="none"/><path d="${SYM[it.type]}" fill="none"/></g>` +
       (vertical
-        ? `<text x="${x + 18}" y="${y + 6}" class="lbl">${svgName(name)}${label(it)}</text>`
+        ? `<text x="${x + 18}" y="${y - 4}" class="lbl">${svgName(name)}</text><text x="${x + 18}" y="${y + 18}" class="lbl">${label(it)}</text>`
         : `<text x="${x}" y="${y - 20}" text-anchor="middle" class="lbl">${svgName(name)}${label(it)}</text>`);
     const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
     const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="3.6" class="dot"/>`;
