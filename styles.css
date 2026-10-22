@@ -123,7 +123,9 @@ canvas.plot.tall { height: 340px; }
 .branch-head small { color: var(--muted); }
 .rows { display: grid; gap: 6px; }
 .row { display: flex; align-items: center; gap: 6px; }
-.row .tag { width: 30px; font-weight: 700; font-size: 14px; }
+.row .tag { width: 30px; font: 18px KaTeX_Main, 'Times New Roman', serif; }
+.row .tag i { font-family: KaTeX_Math, 'Times New Roman', serif; }
+.row .tag sub { font-size: 12px; }
 .row input { width: 0; flex: 1; }
 .row select { width: 64px; }
 .row .x { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 6px; }

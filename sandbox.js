@@ -81,6 +81,10 @@
     }));
   });
 
+  // "R₁" -> ['R', '1'] so names can be typeset with a real subscript
+  const splitName = n => [n[0], n.slice(1).replace(/[₀-₉]/g, d => String(d.charCodeAt(0) - 0x2080))];
+  const svgName = n => { const [a, b] = splitName(n); return `<tspan class="nm">${a}</tspan><tspan class="sb" dy="4">${b}</tspan><tspan dy="-4"> </tspan>`; };
+
   // ---------- schematic ----------
   function schematic(nm) {
     const y0 = 62, yg = 252, srcX = 70, z1a = 130, z1b = 370, node = 440, out = 735;
@@ -94,8 +98,8 @@
     const sym = (it, name, x, y, vertical) =>
       `<g transform="translate(${x} ${y})${vertical ? ' rotate(90)' : ''}"><rect x="-24" y="-15" width="48" height="30" fill="#fff" stroke="none"/><path d="${SYM[it.type]}" fill="none"/></g>` +
       (vertical
-        ? `<text x="${x + 18}" y="${y + 6}" class="lbl"><tspan class="nm">${name}</tspan> ${label(it)}</text>`
-        : `<text x="${x}" y="${y - 20}" text-anchor="middle" class="lbl"><tspan class="nm">${name}</tspan> ${label(it)}</text>`);
+        ? `<text x="${x + 18}" y="${y + 6}" class="lbl">${svgName(name)}${label(it)}</text>`
+        : `<text x="${x}" y="${y - 20}" text-anchor="middle" class="lbl">${svgName(name)}${label(it)}</text>`);
     const line = (x1, y1, x2, y2) => `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
     const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="3.6" class="dot"/>`;
     let w = '', parts = '';
@@ -145,11 +149,11 @@
       `<text x="${out + 12}" y="${cy + 5}" class="big">V<tspan class="subs" dy="4">out</tspan></text>` +
       `<text x="${out + 10}" y="${y0 + 22}" class="pm">+</text><text x="${out + 10}" y="${yg - 10}" class="pm">−</text>` +
       `<rect x="${z1a - 8}" y="${y0 - 36}" width="${z1b - z1a + 16}" height="${z1Bottom - y0 + 36}" rx="8" class="zone"/>` +
-      `<text x="${z1a - 4}" y="${y0 - 42}" class="zlabel">Z₁</text>` +
+      `<text x="${z1a - 4}" y="${y0 - 42}" class="zlabel">Z<tspan class="sb" dy="4">1</tspan></text>` +
       `<rect x="${node - 22}" y="${y0 + 14}" width="${z2Right - node + 14}" height="${yg - y0 - 28}" rx="8" class="zone"/>` +
-      `<text x="${node - 28}" y="${cy + 5}" text-anchor="end" class="zlabel">Z₂</text>`;
+      `<text x="${node - 28}" y="${cy + 5}" text-anchor="end" class="zlabel">Z<tspan class="sb" dy="4">2</tspan></text>`;
     $('schematic').innerHTML =
-      `<style>.lbl{font:17px system-ui,sans-serif;fill:#1f2a3d}.nm{font-weight:700}.missing{font:italic 16px system-ui,sans-serif;fill:#b91c1c}.pm{font:18px system-ui,sans-serif;fill:#1f2a3d}.big{font:italic 20px system-ui,sans-serif;fill:#1f2a3d}.subs{font-size:13px}.dot{fill:#1f2a3d}.zone{fill:none;stroke:#93a4c3;stroke-dasharray:5 4}.zlabel{font:700 18px system-ui,sans-serif;fill:#1d4ed8}</style>` +
+      `<style>.lbl{font:20px KaTeX_Main,'Times New Roman',serif;fill:#1f2a3d;stroke:none}.nm{font-family:KaTeX_Math,'Times New Roman',serif;font-style:italic}.sb{font-size:14px;font-style:normal;font-family:KaTeX_Main,'Times New Roman',serif}.missing{font:italic 16px system-ui,sans-serif;fill:#b91c1c}.pm{font:18px system-ui,sans-serif;fill:#1f2a3d}.big{font:italic 21px KaTeX_Math,'Times New Roman',serif;fill:#1f2a3d}.subs{font:14px KaTeX_Main,'Times New Roman',serif}.dot{fill:#1f2a3d}.zone{fill:none;stroke:#93a4c3;stroke-dasharray:5 4}.zlabel{font:italic 21px KaTeX_Math,'Times New Roman',serif;fill:#1d4ed8}</style>` +
       text + `<g stroke="#1f2a3d" stroke-width="2" fill="none">${w}${src}</g><g stroke="#1f2a3d" stroke-width="2">${parts}</g>${term}`;
   }
 
@@ -350,7 +354,7 @@
   // ---------- main update ----------
   function update() {
     const nm = names();
-    document.querySelectorAll('.branch').forEach((el, bi) => el.querySelectorAll('.row .tag').forEach((tag, i) => { tag.textContent = nm[bi][i]; }));
+    document.querySelectorAll('.branch').forEach((el, bi) => el.querySelectorAll('.row .tag').forEach((tag, i) => { const [a, b] = splitName(nm[bi][i]); tag.innerHTML = `<i>${a}</i><sub>${b}</sub>`; }));
     schematic(nm);
     syncGenerator();
     save();
