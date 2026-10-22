@@ -16,6 +16,7 @@
   let last = null; // inputs of the most recent full render
 
   const texNum = v => {
+    if (v === 0 || Math.abs(v) < 1e-12) return '0';
     const a = Math.abs(v);
     if (a >= 1e-3 && a < 1e6) return String(Number(v.toPrecision(4)));
     const [m, e] = v.toExponential(3).split('e');

@@ -40,6 +40,7 @@
 
   // ---------- number formatting for TeX ----------
   const texNum = v => {
+    if (v === 0 || Math.abs(v) < 1e-12) return '0';
     const a = Math.abs(v);
     if (a >= 1e-3 && a < 1e6) return String(Number(v.toPrecision(4)));
     const [m, e] = v.toExponential(3).split('e');
@@ -341,7 +342,7 @@
     }[g.type];
     if (g.type === 'sine' || g.type === 'cosine') {
       const fn = g.type === 'sine' ? '\\sin' : '\\cos', ph = r.phase;
-      tex += `\\qquad\\Rightarrow\\qquad v_{\\text{out,ss}}(t)=${texNum(g.amp * r.mag)}${fn}\\!\\left(${arg}${ph < 0 ? '-' : '+'}${texNum(Math.abs(ph))}^\\circ\\right)\\ \\text{V}`;
+      tex += `\\qquad\\Rightarrow\\qquad v_{\\text{out,ss}}(t)=${texNum(g.amp * r.mag)}${fn}\\!\\left(${arg}${ph === 0 ? '' : `${ph < 0 ? '-' : '+'}{${texNum(Math.abs(ph))}}^\\circ`}\\right)\\ \\text{V}`;
     }
     katex.render(tex, $('input-eq'), { displayMode: true, throwOnError: false });
 
