@@ -12,12 +12,12 @@
   const C = { pole: '#dc2626', zero: '#059669', test: '#7c3aed', cut: '#c2410c', curve: '#0f766e' };
   // s-plane geometry in viewBox units; both axes share one scale so angles are true
   const MAP = { ox: 470, oy: 372, left: 34, top: 18, w: 520 };
-  let hasZero = false, base = 1, extent = 1, drag = null, model = null, wt = null, frame = 0;
+  let hasZero = false, norm = true, base = 1, extent = 1, drag = null, model = null, wt = null, frame = 0;
   let last = null; // inputs of the most recent full render
 
   const texNum = v => {
     const a = Math.abs(v);
-    if (a >= 1e-3 && a < 1e6) return String(Number(v.toPrecision(5)));
+    if (a >= 1e-3 && a < 1e6) return String(Number(v.toPrecision(4)));
     const [m, e] = v.toExponential(3).split('e');
     return Number(m) + '\\times10^{' + Number(e) + '}';
   };
@@ -33,7 +33,8 @@
     const r = Engine.response(model, w);
     return [
       `ω = ${eng(w, 'rad/s')}   (f = ${eng(w / TWO_PI, 'Hz')})`,
-      { text: `|H| = ${num(20 * Math.log10(r.mag))} dB   (${num(r.mag)} V/V)`, color: C.curve },
+      { text: `|H| = ${num(r.mag)} V/V  (${num(20 * Math.log10(r.mag), 3)} dB)`, color: C.curve },
+      { text: `|H/K₀| = ${num(20 * Math.log10(r.mag / last.k), 3)} dB`, color: C.curve },
       { text: `∠H = ${num(r.phase)}°`, color: C.curve },
     ];
   };
@@ -68,10 +69,10 @@
     model = { n: hasZero ? [k, k / wz] : [k], d: [1, 1 / wp] };
     if (!(wt > 0)) wt = wp;
 
-    const frac = w => `1+s/${texNum(w)}`;
+    const rad = '\\ \\text{rad/s}';
     katex.render(hasZero
-      ? `H(s)=K_0\\,\\dfrac{1+s/\\omega_z}{1+s/\\omega_p}=${texNum(k)}\\,\\dfrac{${frac(wz)}}{${frac(wp)}}`
-      : `H(s)=\\dfrac{K_0}{1+s/\\omega_p}=\\dfrac{${texNum(k)}}{${frac(wp)}}`, $('eq'), { displayMode: true, throwOnError: false });
+      ? `H(s)=K_0\\,\\dfrac{1+s/\\omega_z}{1+s/\\omega_p}\\qquad K_0=${texNum(k)},\\quad \\omega_z=${texNum(wz)}${rad},\\quad \\omega_p=${texNum(wp)}${rad}`
+      : `H(s)=\\dfrac{K_0}{1+s/\\omega_p}\\qquad K_0=${texNum(k)},\\quad \\omega_p=${texNum(wp)}${rad}`, $('eq'), { displayMode: true, throwOnError: false });
 
     // Plot range: fixed decades so moving the pole visibly shifts the curve
     const crit = [wp].concat(hasZero ? [wz] : []);
@@ -79,57 +80,59 @@
     const hi = Math.max(1e7, 10 ** (Math.ceil(Math.log10(Math.max(...crit))) + 2));
     const ws = Array.from({ length: 700 }, (_, i) => lo * (hi / lo) ** (i / 699));
     const rs = ws.map(w => Engine.response(model, w));
-    const db = rs.map(r => 20 * Math.log10(r.mag));
-    const k0db = 20 * Math.log10(k);
-    const cut = Engine.magCrossings(model, k / Math.SQRT2, lo, hi)[0];
+    const k0db = 20 * Math.log10(k), off = norm ? k0db : 0; // normalised plots put K₀ at 0 dB
+    const db = rs.map(r => 20 * Math.log10(r.mag) - off);
+    const cut = Engine.cutoff(model, k);
     const w45 = Engine.phaseCrossing(model, -45, lo, hi);
     const cancelled = hasZero && Math.abs(wz - wp) <= 1e-9 * wp;
 
-    let ymin = Math.min(k0db - 10, ...db), ymax = Math.max(k0db + 5, ...db);
+    let ymin = Math.min(k0db - off - 10, ...db), ymax = Math.max(k0db - off + 5, ...db);
     const step = ymax - ymin > 90 ? 20 : 10;
     ymin = Math.floor(ymin / step) * step; ymax = Math.ceil(ymax / step) * step;
     const vLines = [{ x: wp, color: C.pole, dash: [2, 4], label: 'ωp', bottom: true }];
     if (hasZero) vLines.push({ x: wz, color: C.zero, dash: [2, 4], label: 'ωz', bottom: true, row: 1 });
     last = {
-      wp, wz, k, lo, hi,
+      wp, wz, k, lo, hi, off,
       mag: { x: [lo, hi], y: [ymin, ymax], yStep: step, series: [{ x: ws, y: db, color: C.curve }],
-        hLines: [{ y: k0db - DB3, color: C.cut, dash: [6, 4], label: 'K₀ − 3 dB' }],
+        hLines: [{ y: k0db - off - DB3, color: C.cut, dash: [6, 4], label: norm ? '−3 dB' : `K₀ − 3 dB = ${num(k0db - DB3, 3)} dB` }],
         vLines: cut ? vLines.concat([{ x: cut, color: C.cut, dash: [6, 4], label: 'ω−3dB' }]) : vLines,
-        points: cut ? [{ x: cut, y: k0db - DB3, color: C.cut }] : [] },
+        points: cut ? [{ x: cut, y: k0db - off - DB3, color: C.cut }] : [] },
       phase: { x: [lo, hi], y: [-90, 90], yStep: 45, series: [{ x: ws, y: rs.map(r => r.phase), color: C.curve }],
         hLines: [{ y: -45, color: C.cut, dash: [6, 4], label: '−45°' }],
         vLines: w45 ? vLines.concat([{ x: w45, color: C.cut, dash: [6, 4], label: 'ω at −45°' }]) : vLines,
         points: w45 ? [{ x: w45, y: -45, color: C.cut }] : [] },
     };
+    magPlot.o.yLabel = norm ? '|H/K₀|  (dB)' : '|H(jω)|  (dB)';
+    document.querySelectorAll('#pz-norm button').forEach(b => b.classList.toggle('on', (b.dataset.norm === '1') === norm));
     drawTest();
 
     const stat = (label, value, cls = '') => `<div class="stat ${cls}"><b>${label}</b><span>${value}</span></div>`;
     $('stats').innerHTML =
-      stat('−3 dB bandwidth ω−3dB', cut ? `${eng(cut, 'rad/s', 5)} · ${eng(cut / TWO_PI, 'Hz', 4)}` : 'none (within 3 dB of K₀)') +
-      stat('Phase = −45° at', w45 ? `${eng(w45, 'rad/s', 5)} · ${eng(w45 / TWO_PI, 'Hz', 4)}` : 'never reached') +
-      stat('DC gain K₀', `${num(k)} · ${num(k0db)} dB`) +
-      (hasZero ? stat('High-frequency gain', `${num(k * wp / wz)} · ${num(20 * Math.log10(k * wp / wz))} dB`) : '') +
+      stat('−3 dB bandwidth ω−3dB', cut ? `${eng(cut, 'rad/s', 4)} (${eng(cut / TWO_PI, 'Hz', 4)})` : 'none: gain never drops 3 dB below K₀') +
+      stat('Phase = −45° at', w45 ? `${eng(w45, 'rad/s', 4)} (${eng(w45 / TWO_PI, 'Hz', 4)})` : 'never reached') +
+      stat('DC gain K₀', `${num(k)} V/V (${num(k0db, 3)} dB)`) +
+      (hasZero ? stat('High-frequency gain', `${num(k * wp / wz)} V/V (${num(20 * Math.log10(k * wp / wz), 3)} dB)`) : '') +
       (cancelled ? stat('Pole–zero cancellation', 'Flat: |H| = K₀ and ∠H = 0° at every ω', 'note') : '');
   }
 
   // Redraws everything that depends on the test frequency wt: the s-plane and the Bode markers.
   function drawTest() {
     if (!last) return;
-    const { wp, wz, k, lo, hi } = last;
+    const { wp, wz, k, lo, hi, off } = last;
     wt = Math.min(hi, Math.max(lo, wt));
     // Zoom the s-plane out (equal scales, so angles stay true) to keep jω on screen
     extent = Math.max(base, wt / FIT);
     const zoom = extent / base;
     const r = Engine.response(model, wt), db = 20 * Math.log10(r.mag);
     const marker = { x: wt, color: C.test, dash: [2, 3] };
-    magPlot.set({ ...last.mag, vLines: last.mag.vLines.concat([marker]), points: last.mag.points.concat([{ x: wt, y: db, color: C.test }]) });
+    magPlot.set({ ...last.mag, vLines: last.mag.vLines.concat([marker]), points: last.mag.points.concat([{ x: wt, y: db - off, color: C.test }]) });
     phasePlot.set({ ...last.phase, vLines: last.phase.vLines.concat([marker]), points: last.phase.points.concat([{ x: wt, y: r.phase, color: C.test }]) });
     drawMap(wp, wz);
 
     // Geometry readout: lengths and angles of the vectors from each root to jω
     const lp = Math.hypot(wp, wt), tp = Math.atan2(wt, wp) * DEG;
     const lz = Math.hypot(wz, wt), tz = Math.atan2(wt, wz) * DEG;
-    const head = `<b>●</b> s = j${eng(wt, 'rad/s', 4)} &nbsp;→&nbsp; |H(jω)| = ${num(r.mag)} (${num(db)} dB), &nbsp;∠H = ${num(r.phase)}°`;
+    const head = `<b>●</b> s = j${eng(wt, 'rad/s', 4)} &nbsp;→&nbsp; |H(jω)| = ${num(r.mag)} V/V (${num(db, 3)} dB), &nbsp;∠H = ${num(r.phase)}°`;
     const geo = hasZero
       ? `|H| = K₀ (ωp/ωz) · <span class="z">${eng(lz, '', 4)}</span> / <span class="p">${eng(lp, '', 4)}</span> &nbsp;·&nbsp; ∠H = <span class="z">θz ${num(tz)}°</span> − <span class="p">θp ${num(tp)}°</span>`
       : `|H| = K₀ ωp / <span class="p">|jω − p₁|</span> = ${num(k)} × ${eng(wp, '', 4)} / <span class="p">${eng(lp, '', 4)}</span> &nbsp;·&nbsp; ∠H = −<span class="p">θp</span> = −${num(tp)}°`;
@@ -220,6 +223,7 @@
   map.addEventListener('pointerup', end);
   map.addEventListener('pointercancel', end);
 
+  document.querySelectorAll('#pz-norm button').forEach(b => b.addEventListener('click', () => { norm = b.dataset.norm === '1'; render(false); }));
   ['p', 'z', 'k'].forEach(id => $(id).addEventListener('input', () => render(true)));
   document.querySelectorAll('#pz-preset button').forEach(b => b.addEventListener('click', () => {
     hasZero = b.dataset.preset === 'zero';

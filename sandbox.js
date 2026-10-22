@@ -41,7 +41,7 @@
   // ---------- number formatting for TeX ----------
   const texNum = v => {
     const a = Math.abs(v);
-    if (a >= 1e-3 && a < 1e6) return String(Number(v.toPrecision(5)));
+    if (a >= 1e-3 && a < 1e6) return String(Number(v.toPrecision(4)));
     const [m, e] = v.toExponential(3).split('e');
     return Number(m) + '\\times10^{' + Number(e) + '}';
   };
@@ -183,7 +183,20 @@
     else body = `\\dfrac{${(nf.join('') + (sp > 0 ? sTerm : '')) || '1'}}{${df.join('') + (sp < 0 ? (sp === -1 ? 's' : `s^{${-sp}}`) : '') || '1'}}`;
     return `H(s)=${texNum(K)}${body ? '\\,' + body : ''}`;
   }
-  const rootText = r => r.im === 0 ? eng(r.re, '', 5) : `${eng(r.re, '', 4)} ± j${eng(Math.abs(r.im), '', 4)}`;
+  // First-order circuits are shown in the assignment's canonical form with the
+  // values listed separately; anything else falls back to the factored form.
+  function tfTeX(m, zeros, poles) {
+    const n = m.n, d = m.d, rad = '\\ \\text{rad/s}', vals = list => '\\qquad ' + list.join(',\\quad ');
+    if (d.length === 1 && n.length === 1) return `H(s)=K_0${vals([`K_0=${texNum(n[0] / d[0])}`])}`;
+    if (d.length === 2 && d[0] !== 0 && n.length <= 2) {
+      const wp = d[0] / d[1], k0 = n[0] / d[0];
+      if (n.length === 1) return `H(s)=\\dfrac{K_0}{1+s/\\omega_p}${vals([`K_0=${texNum(k0)}`, `\\omega_p=${texNum(wp)}${rad}`])}`;
+      if (n[0] === 0) return `H(s)=K_\\infty\\,\\dfrac{s/\\omega_p}{1+s/\\omega_p}${vals([`K_\\infty=${texNum(n[1] / d[1])}`, `\\omega_p=${texNum(wp)}${rad}`])}`;
+      return `H(s)=K_0\\,\\dfrac{1+s/\\omega_z}{1+s/\\omega_p}${vals([`K_0=${texNum(k0)}`, `\\omega_z=${texNum(n[0] / n[1])}${rad}`, `\\omega_p=${texNum(wp)}${rad}`])}`;
+    }
+    return factorTeX(m, zeros, poles);
+  }
+  const rootText = r => r.im === 0 ? eng(r.re, '', 4) : `${eng(r.re, '', 4)} ± j${eng(Math.abs(r.im), '', 4)}`;
 
   // ---------- Bode plot ----------
   const dispTick = x => eng(x);
@@ -192,7 +205,8 @@
     const r = Engine.response(current.m, x * factor());
     return [
       `${fSym()} = ${eng(x, fUnit(), 4)}`,
-      { text: `|H| = ${num(20 * Math.log10(r.mag))} dB   (${num(r.mag)} V/V)`, color: COLORS.in },
+      { text: `|H| = ${num(r.mag)} V/V  (${num(20 * Math.log10(r.mag), 3)} dB)`, color: COLORS.in },
+      ...(current.ref ? [{ text: `|H/${current.refName}| = ${num(20 * Math.log10(r.mag / current.ref), 3)} dB`, color: COLORS.in }] : []),
       { text: `∠H = ${num(r.phase)}°`, color: COLORS.in },
       { text: 'click to use as test frequency', color: '#8a94a6' },
     ];
@@ -215,11 +229,13 @@
     current.range = [lo, hi];
     const xs = Array.from({ length: 900 }, (_, i) => lo * (hi / lo) ** (i / 899));
     const rs = xs.map(x => Engine.response(m, x * f));
-    const db = rs.map(r => 20 * Math.log10(r.mag));
+    const normed = state.norm !== false && !!ref, refDb = ref ? 20 * Math.log10(ref) : 0;
+    const db = rs.map(r => 20 * Math.log10(r.mag) - (normed ? refDb : 0));
     const ph = []; rs.forEach((r, i) => { let p = r.phase; if (i) { while (p - ph[i - 1] > 180) p -= 360; while (p - ph[i - 1] < -180) p += 360; } ph.push(p); });
     const finite = db.filter(Number.isFinite);
     let ymin = Math.min(...finite), ymax = Math.max(...finite);
     if (ymax - ymin < 20) { const c = (ymax + ymin) / 2; ymin = c - 15; ymax = c + 10; }
+    if (normed) { ymax = Math.max(ymax, 5); ymin = Math.min(ymin, -10); }
     const ys = ymax - ymin > 100 ? 20 : 10;
     ymin = Math.floor((ymin - 2) / ys) * ys; ymax = Math.ceil((ymax + 2) / ys) * ys;
     let pmin = Math.floor((Math.min(...ph) - 5) / 45) * 45, pmax = Math.ceil((Math.max(...ph) + 5) / 45) * 45;
@@ -230,10 +246,13 @@
     if (showTest) vLines.push({ x: test, color: COLORS.test, label: fSym() + '₀ (generator)', bottom: true });
     const label = `${fSym()} (${fUnit()})`;
     magPlot.o.xLabel = phasePlot.o.xLabel = label;
+    magPlot.o.yLabel = normed ? `|H/${current.refName}|  (dB)` : '|H|  (dB)';
+    document.querySelectorAll('#sb-norm button').forEach(b => { b.classList.toggle('on', (b.dataset.norm === '1') === normed); b.disabled = !ref; });
+    const lvl = (normed ? 0 : refDb) - DB3;
     magPlot.set({
       x: [lo, hi], y: [ymin, ymax], yStep: ys, series: [{ x: xs, y: db, color: COLORS.in }], vLines,
-      hLines: ref ? [{ y: 20 * Math.log10(ref) - DB3, color: COLORS.cut, dash: [6, 4], label: current.refName + ' − 3 dB' }] : [],
-      points: cut ? [{ x: cut / f, y: 20 * Math.log10(ref) - DB3, color: COLORS.cut }] : [],
+      hLines: ref ? [{ y: lvl, color: COLORS.cut, dash: [6, 4], label: normed ? '−3 dB' : `${current.refName} − 3 dB = ${num(lvl, 3)} dB` }] : [],
+      points: cut ? [{ x: cut / f, y: lvl, color: COLORS.cut }] : [],
     });
     phasePlot.set({ x: [lo, hi], y: [pmin, pmax], yStep: pmax - pmin > 360 ? 90 : 45, series: [{ x: xs, y: ph, color: COLORS.in }], vLines });
   }
@@ -266,7 +285,8 @@
     if (document.activeElement !== $('f') && g.w) $('f').value = Number((g.w / factor()).toPrecision(6));
     $('x10').checked = !!state.x10;
     $('out-label').innerHTML = state.x10 ? 'Output ×10 &nbsp;(10·v<sub>out</sub>)' : 'Output v<sub>out</sub>(t)';
-    document.querySelectorAll('#sb-unit button').forEach(b => b.classList.toggle('on', b.dataset.unit === state.unit));
+    document.querySelectorAll('#sb-norm button').forEach(b => b.addEventListener('click', () => { state.norm = b.dataset.norm === '1'; update(); }));
+  document.querySelectorAll('#sb-unit button').forEach(b => b.classList.toggle('on', b.dataset.unit === state.unit));
     $('auto').classList.toggle('on', g.auto);
   }
   function setWindowField(win) {
@@ -377,22 +397,20 @@
       let ref = null, refName = '';
       if (K0 > 0 && Number.isFinite(K0)) { ref = K0; refName = 'K₀'; }
       else if (hf > 0 && Number.isFinite(hf)) { ref = hf; refName = 'HF gain'; }
-      const crit = poles.concat(zeros).map(r => Math.hypot(r.re, r.im)).filter(v => v > 0);
-      const lo = crit.length ? Math.min(...crit) / 1e4 : 1e-3, hi = crit.length ? Math.max(...crit) * 1e4 : 1e9;
-      const cut = ref ? Engine.magCrossings(m, ref / Math.SQRT2, lo, hi)[0] || null : null;
+      const cut = Engine.cutoff(m, ref);
       current = { m, zeros, poles, K0, ref, refName, cut };
       if (!state.gen.w) state.gen.w = cut || 1000;
       syncGenerator();
       status.className = 'status'; status.textContent = '';
 
-      katex.render(factorTeX(m, zeros, poles), $('eq'), { displayMode: true, throwOnError: false });
+      katex.render(tfTeX(m, zeros, poles), $('eq'), { displayMode: true, throwOnError: false });
       const f = factor(), stat = (l, v, c = '') => `<div class="stat ${c}"><b>${l}</b><span>${v}</span></div>`;
       const cancel = poles.some(p => zeros.some(z => Math.hypot(p.re - z.re, p.im - z.im) <= 1e-6 * Math.hypot(p.re, p.im)));
       $('stats').innerHTML =
-        stat('DC gain K₀ = H(0)', Number.isFinite(K0) ? `${num(K0)} · ${K0 > 0 ? num(20 * Math.log10(K0)) + ' dB' : '−∞ dB'}` : '∞') +
+        stat('DC gain K₀ = H(0)', Number.isFinite(K0) ? `${num(K0)} V/V (${K0 > 0 ? num(20 * Math.log10(K0), 3) + ' dB' : '−∞ dB'})` : '∞') +
         stat(`−3 dB ${state.unit === 'hz' ? 'frequency f−3dB' : 'bandwidth ω−3dB'}`, cut
-          ? (state.unit === 'hz' ? `${eng(cut / f, 'Hz', 5)} · ${eng(cut, 'rad/s', 5)}` : `${eng(cut, 'rad/s', 5)} · ${eng(cut / TWO_PI, 'Hz', 5)}`)
-          : (ref ? 'none (flat within 3 dB)' : '—')) +
+          ? (state.unit === 'hz' ? `${eng(cut / f, 'Hz', 4)} (${eng(cut, 'rad/s', 4)})` : `${eng(cut, 'rad/s', 4)} (${eng(cut / TWO_PI, 'Hz', 4)})`)
+          : (ref ? 'none: gain never drops 3 dB below ' + current.refName : '—')) +
         stat('Poles (rad/s)', poles.length ? poles.filter(p => p.im >= 0).map(rootText).join(', ') : 'none') +
         stat('Zeros (rad/s)', zeros.length ? zeros.filter(p => p.im >= 0).map(rootText).join(', ') : 'none') +
         (cancel ? stat('Pole–zero cancellation', 'Flat, distortion-free response', 'note') : '');
@@ -439,6 +457,7 @@
   $('x10').addEventListener('change', () => { state.x10 = $('x10').checked; update(); });
   $('at-cut').addEventListener('click', () => { if (current?.cut) { state.gen.w = current.cut; state.gen.auto = true; update(); } });
   $('at-10').addEventListener('click', () => { if (current?.cut) { state.gen.w = 10 * current.cut; state.gen.auto = true; update(); } });
+  document.querySelectorAll('#sb-norm button').forEach(b => b.addEventListener('click', () => { state.norm = b.dataset.norm === '1'; update(); }));
   document.querySelectorAll('#sb-unit button').forEach(b => b.addEventListener('click', () => { state.unit = b.dataset.unit; update(); }));
   document.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', () => {
     state = PRESETS[b.dataset.load]();

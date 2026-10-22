@@ -6,12 +6,12 @@
 <title>EE2101 Assignment Alpha · Interactive Tool</title>
 <meta name="description" content="Pole-zero to Bode plot explorer and voltage-divider circuit sandbox with a signal generator, for EE2101 Assignment Alpha.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=5">
 <script defer src="vendor/katex.min.js"></script>
-<script defer src="engine.js?v=1"></script>
+<script defer src="engine.js?v=2"></script>
 <script defer src="plot.js?v=2"></script>
-<script defer src="polezero.js?v=4"></script>
-<script defer src="sandbox.js?v=4"></script>
+<script defer src="polezero.js?v=5"></script>
+<script defer src="sandbox.js?v=5"></script>
 </head>
 <body>
 <header class="top">
@@ -48,6 +48,7 @@
 
     <div class="card">
       <div class="stats" id="pz-stats"></div>
+      <div class="plot-head"><span>Magnitude</span><div class="seg small" id="pz-norm" role="group" aria-label="Magnitude scale"><button type="button" data-norm="1">Normalized |H/K₀|</button><button type="button" data-norm="0">Absolute |H|</button></div></div>
       <canvas id="pz-mag" class="plot"></canvas>
       <canvas id="pz-phase" class="plot"></canvas>
     </div>
@@ -102,6 +103,7 @@
       <h2>Transfer function &amp; Bode plot</h2>
       <div id="sb-eq" class="eq"></div>
       <div class="stats" id="sb-stats"></div>
+      <div class="plot-head"><span>Magnitude</span><div class="seg small" id="sb-norm" role="group" aria-label="Magnitude scale"><button type="button" data-norm="1">Normalized |H/K₀|</button><button type="button" data-norm="0">Absolute |H|</button></div></div>
       <canvas id="sb-mag" class="plot"></canvas>
       <canvas id="sb-phase" class="plot"></canvas>
       <p class="hint">Click on the Bode plot to send that frequency to the signal generator.</p>

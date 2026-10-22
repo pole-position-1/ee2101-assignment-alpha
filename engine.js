@@ -69,8 +69,8 @@
   }
 
   // Frequencies where |H| crosses `level`, searched on a log grid then bisected.
-  function magCrossings(m, level, lo, hi) {
-    const f = w => response(m, w).mag - level, out = [], N = 3000;
+  function magCrossings(m, level, lo, hi, N = 3000) {
+    const f = w => response(m, w).mag - level, out = [];
     let wPrev = lo, yPrev = f(lo);
     for (let i = 1; i <= N; i++) {
       const w = lo * (hi / lo) ** (i / N), y = f(w);
@@ -78,6 +78,12 @@
       wPrev = w; yPrev = y;
     }
     return out;
+  }
+  // −3 dB frequency relative to `ref` (normally the DC gain). The search spans a
+  // fixed, very wide band so it never depends on how the roots were estimated.
+  function cutoff(m, ref) {
+    if (!(ref > 0 && Number.isFinite(ref))) return null;
+    return magCrossings(m, ref / Math.SQRT2, 1e-4, 1e13, 8500)[0] || null;
   }
   // First frequency where the (unwrapped) phase crosses `deg`.
   function phaseCrossing(m, deg, lo, hi) {
@@ -236,7 +242,7 @@
     return { t, u, y, direct: type === 'impulse' ? sys.D * amp : 0 };
   }
 
-  const api = { add, mul, trim, impedance, divider, response, dcGain, magCrossings, phaseCrossing, roots, simulate, expm };
+  const api = { add, mul, trim, impedance, divider, response, dcGain, magCrossings, cutoff, phaseCrossing, roots, simulate, expm };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(typeof window === 'undefined' ? {} : window);
