@@ -6,12 +6,17 @@
 <title>EE2101 Assignment Alpha · Interactive Tool</title>
 <meta name="description" content="Pole-zero to Bode plot explorer and voltage-divider circuit sandbox with a signal generator, for EE2101 Assignment Alpha.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=14">
 <script defer src="vendor/katex.min.js"></script>
-<script defer src="engine.js?v=2"></script>
-<script defer src="plot.js?v=2"></script>
-<script defer src="polezero.js?v=6"></script>
-<script defer src="sandbox.js?v=6"></script>
+<script defer src="engine.js?v=8"></script>
+<script defer src="student.js?v=1"></script>
+<script defer src="plot.js?v=3"></script>
+<script defer src="polezero.js?v=9"></script>
+<script defer src="sandbox.js?v=7"></script>
+<script defer src="amp.js?v=5"></script>
+<script defer src="buffer.js?v=5"></script>
+<script defer src="bullseye.js?v=2"></script>
+<script defer src="smith.js?v=2"></script>
 </head>
 <body>
 <header class="top">
@@ -19,7 +24,15 @@
   <nav class="tabs" aria-label="Sections">
     <a href="#pole-zero" data-tab="pole-zero"><span class="num">1</span> Pole–Zero → Bode</a>
     <a href="#sandbox" data-tab="sandbox"><span class="num">2</span> Circuit Sandbox</a>
+    <a href="#bullseye" data-tab="bullseye"><span class="num">3</span> 2D Impedance Plane</a>
+    <a href="#smith" data-tab="smith"><span class="num">4</span> Smith Chart L-Match</a>
+    <a href="#amp" data-tab="amp"><span class="num">5</span> Amplifier Compensation</a>
   </nav>
+  <div class="student" role="group" aria-label="Student identity">
+    <label><span>Student Name</span><input id="st-name" type="text" required autocomplete="name" placeholder="Full name" maxlength="60"></label>
+    <label><span>Matric No.</span><input id="st-matric" type="text" required placeholder="e.g., A1234567B" maxlength="15" autocapitalize="characters" spellcheck="false"></label>
+    <div id="st-params" class="params" aria-live="polite"></div>
+  </div>
 </header>
 
 <main>
@@ -27,19 +40,29 @@
 <section id="pole-zero" class="page">
   <div class="intro">
     <h1>Pole–Zero to Bode Plot Explorer</h1>
-    <p>Drag the pole <b class="c-pole">×</b> or zero <b class="c-zero">○</b> along the negative real axis, or type exact values. Move along the Bode plot and the <b class="c-test">●</b> test point s = jω climbs the imaginary axis: the Bode plot is H(s) evaluated along that axis.</p>
+    <p>Choose a real pole or a complex-conjugate pole pair, and any kind of zero. Drag the poles <b class="c-pole">×</b> anywhere in the left half plane and the zeros <b class="c-zero">○</b> anywhere at all: into the right half plane, onto the jω axis, or off the axis as a conjugate pair. You can also type exact values. Switching between LHP real and RHP real keeps the zero's size, the poles and K₀, so you can compare the two directly. Move along the Bode plot and the <b class="c-test">●</b> test point s = jω climbs the imaginary axis: the Bode plot is H(s) evaluated along that axis.</p>
   </div>
 
   <div class="grid">
     <div class="card">
-      <div class="seg" id="pz-preset" role="group" aria-label="Preset">
-        <button type="button" data-preset="pole">One Real Pole</button>
-        <button type="button" data-preset="zero">Pole + Real Zero</button>
+      <div class="pz-modes">
+        <div class="mode-row"><span class="bar-label">Poles</span><div class="seg" id="pz-poles" role="group" aria-label="Poles">
+          <button type="button" data-poles="real">Real pole</button>
+          <button type="button" data-poles="two">Two real poles</button>
+          <button type="button" data-poles="pair">Complex-conjugate pair</button>
+        </div></div>
+        <div class="mode-row"><span class="bar-label">Zeros</span><div class="seg" id="pz-zeros" role="group" aria-label="Zeros">
+          <button type="button" data-zero="none">None</button>
+          <button type="button" data-zero="lhp">LHP real</button>
+          <button type="button" data-zero="rhp">RHP real</button>
+          <button type="button" data-zero="jw">jω-axis pair</button>
+          <button type="button" data-zero="pair">Complex pair</button>
+        </div></div>
       </div>
       <svg id="pz-map" viewBox="0 0 520 420" role="img" aria-label="s-plane pole-zero map"></svg>
       <div class="fields">
-        <label><span>Pole &nbsp;p₁ = −</span><input id="pz-p" type="number" value="1000" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
-        <label id="pz-zero-field"><span>Zero z₁ = −</span><input id="pz-z" type="number" value="4000" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
+        <label id="pz-pole-field"><span>Pole &nbsp;p₁ = −</span><input id="pz-p" type="number" value="1000" min="0" step="any" inputmode="decimal" aria-label="Pole real part magnitude"><span id="pz-pi-wrap" class="inline"><em>± j</em><input id="pz-pi" type="number" value="0" min="0" step="any" inputmode="decimal" aria-label="Pole imaginary part"></span><span id="pz-p2-wrap" class="inline" hidden><em>p₂ = −</em><input id="pz-p2" type="number" value="10000" min="0" step="any" inputmode="decimal" aria-label="Second pole magnitude"></span><em>rad/s</em></label>
+        <label id="pz-zero-field"><span>Zero z₁ =</span><input id="pz-zr" type="number" value="-4000" step="any" inputmode="decimal" aria-label="Zero real part σ"><em>± j</em><input id="pz-zi" type="number" value="0" min="0" step="any" inputmode="decimal" aria-label="Zero imaginary part"><em>rad/s</em></label>
         <label><span>DC gain K₀ =</span><input id="pz-k" type="number" value="1" min="0" step="any" inputmode="decimal"><em></em></label>
       </div>
       <div id="pz-test" class="testline"></div>
@@ -64,6 +87,9 @@
       <span class="bar-label">Start from</span>
       <button type="button" class="chip" data-load="fig1">Fig. 1 · RC divider</button>
       <button type="button" class="chip" data-load="fig2">Fig. 2 · 10× probe</button>
+      <button type="button" class="chip" data-load="partA" title="Z₁ = R₁, Z₂ = L in series with C">Part A · notch trap</button>
+      <button type="button" class="chip" data-load="partB" title="Z₁ = R_S in series with L, Z₂ = R_L in parallel with C">Part B · L-match</button>
+      <button type="button" class="chip" data-load="partC" title="Z₁ = R₁, Z₂ = R_z in series with C_eq">Part C · nulling R</button>
       <button type="button" class="chip" data-load="empty">Empty</button>
       <span class="spacer"></span>
       <span class="bar-label">Frequency in</span>
@@ -72,6 +98,7 @@
         <button type="button" data-unit="hz">Hz</button>
       </div>
     </div>
+    <p class="hint preset-hint">Part presets wire the topology with example values. Replace them with the values you designed from your X, Y, Z.</p>
   </div>
 
   <div class="grid">
@@ -106,7 +133,22 @@
       <div class="plot-head"><span>Magnitude</span><div class="seg small" id="sb-norm" role="group" aria-label="Magnitude scale"><button type="button" data-norm="1">Normalized |H/K₀|</button><button type="button" data-norm="0">Absolute |H|</button></div></div>
       <canvas id="sb-mag" class="plot"></canvas>
       <canvas id="sb-phase" class="plot"></canvas>
-      <p class="hint">Click on the Bode plot to send that frequency to the signal generator.</p>
+      <p class="hint">Click on the Bode plot to move the ω₀ cursor. The signal generator uses the same ω₀.</p>
+    </div>
+  </div>
+
+  <div class="card wide">
+    <h2>At the cursor frequency: impedances &amp; phasors</h2>
+    <div class="cursor-bar">
+      <label><span id="sb-c-label">ω₀</span><input id="sb-c" type="number" min="0" step="any" inputmode="decimal"><em id="sb-c-unit">rad/s</em></label>
+      <input id="sb-c-slider" type="range" min="0" max="1000" step="1" aria-label="Cursor frequency, log scale">
+    </div>
+    <div class="cursor-grid">
+      <div>
+        <div id="sb-readout" class="readout"></div>
+        <div id="sb-phasor-key" class="phasor-key"></div>
+      </div>
+      <svg id="sb-phasor" viewBox="0 0 420 330" role="img" aria-label="Phasor diagram at the cursor frequency"></svg>
     </div>
   </div>
 
@@ -119,11 +161,12 @@
         <button type="button" data-type="sine">Sine</button>
         <button type="button" data-type="cosine">Cosine</button>
         <button type="button" data-type="square">Square</button>
+        <button type="button" data-type="dual">Dual-Tone Superposition</button>
       </div>
       <div class="gen-fields">
-        <label><span id="sb-amp-label">Amplitude A</span><input id="sb-amp" type="number" value="1" step="any" inputmode="decimal"><em id="sb-amp-unit">V</em></label>
+        <label class="needs-amp"><span id="sb-amp-label">Amplitude A</span><input id="sb-amp" type="number" value="1" step="any" inputmode="decimal"><em id="sb-amp-unit">V</em></label>
         <label class="needs-freq"><span id="sb-f-label">Frequency</span><input id="sb-f" type="number" min="0" step="any" inputmode="decimal"><em id="sb-f-unit">rad/s</em></label>
-        <span class="needs-freq quick">
+        <span class="needs-freq needs-cut quick">
           <button type="button" class="chip" id="sb-at-cut">at −3 dB</button>
           <button type="button" class="chip" id="sb-at-10">10 × −3 dB</button>
         </span>
@@ -140,15 +183,220 @@
     <div class="stats" id="sb-time-stats"></div>
   </div>
 </section>
+
+<!-- ============ Section 3: 2D impedance-plane bullseye game ============ -->
+<section id="bullseye" class="page" hidden>
+  <div class="intro">
+    <h1>2D Impedance Plane Bullseye</h1>
+    <p>Present the load R<sub>L</sub> to the source as exactly 50 + j0 Ω at ω₀. The horizontal axis is resistance R and the vertical axis is reactance X, both in ohms. <b class="c-sm-c">Step 1:</b> the shunt C pulls Z₂ = R<sub>L</sub> ∥ 1/(jω₀C) round the dashed capacitive semicircle until its real part lands on the <b class="c-sm-gold">gold R = 50 Ω line</b>. <b class="c-sm-l">Step 2:</b> the series L adds +jω₀L, lifting Z₂ straight up into the bullseye.</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Matching network</h2>
+      <svg id="bz-schem" viewBox="0 0 500 146" role="img" aria-label="Source V_in with R_S = 50 ohm, series L, then shunt C across the load R_L"></svg>
+      <div class="fields sm-fields">
+        <label><span>Load R<sub>L</sub></span><input id="bz-rl" type="number" min="100" max="2000" step="any" inputmode="decimal"><em>Ω &nbsp;(100 – 2000)</em></label>
+        <label><span>Frequency ω₀</span><input id="bz-w" type="number" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
+      </div>
+      <div class="sm-slider c">
+        <label><span>1 · Shunt C</span><input id="bz-c" type="number" min="0" step="0.001" inputmode="decimal"><em>nF</em></label>
+        <input id="bz-c-slider" type="range" min="0" step="1" aria-label="Shunt capacitor C">
+        <small id="bz-c-max"></small>
+      </div>
+      <div class="sm-slider l">
+        <label><span>2 · Series L</span><input id="bz-l" type="number" min="0" step="0.0001" inputmode="decimal"><em>mH</em></label>
+        <input id="bz-l-slider" type="range" min="0" step="1" aria-label="Series inductor L">
+        <small id="bz-l-max"></small>
+      </div>
+      <div id="bz-step" class="sm-status" role="status" aria-live="polite"></div>
+      <div id="bz-banner" class="sm-status" role="status" aria-live="polite"></div>
+      <div id="bz-readout" class="readout sm-badge"></div>
+    </div>
+
+    <div class="card">
+      <div class="plot-head bz-head"><span>View</span><div class="seg small" id="bz-view" role="group" aria-label="Chart view">
+        <button type="button" data-view="plane">2D (R, jX) Plane</button>
+        <button type="button" data-view="smith">Warp to Smith Chart (Bonus)</button>
+      </div></div>
+      <canvas id="bz-chart" class="smith"></canvas>
+      <div class="legend sm-legend">
+        <span><span class="key" style="background:#1f2a3d"></span>Z<sub>L</sub> = (R<sub>L</sub>, 0)</span>
+        <span><span class="key" style="background:#0891b2"></span>Z₂ as C grows (dashed: C → ∞)</span>
+        <span><span class="key" style="background:#c2410c"></span>+jω₀L lift → Z<sub>match</sub></span>
+        <span><span class="key dash gold"></span>target R = 50 Ω</span>
+      </div>
+      <p class="hint">The warp maps every point through Γ = (Z/50 − 1)/(Z/50 + 1). The R = 50 Ω line becomes the r = 1 circle, the jX axis becomes the rim, and the semicircle becomes a constant-conductance circle. Hover over the chart to read Z and |Γ|.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Section 4: Smith chart L-match playground ============ -->
+<section id="smith" class="page" hidden>
+  <div class="intro">
+    <h1>Interactive Smith Chart L-Match Playground</h1>
+    <p>Match a resistive load R<sub>L</sub> to Z₀ = 50 Ω at the carrier ω₀. A shunt C across the load slides z along the load's dashed <b class="c-sm-c">constant-conductance circle</b>. A series L then slides it along a <b class="c-sm-l">constant-resistance circle</b>. Use C to land z₂ on the <b class="c-sm-gold">gold r = 1 circle</b>, then use L to cancel its reactance and hit the bullseye.</p>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Matching network</h2>
+      <svg id="sm-schem" viewBox="0 0 440 140" role="img" aria-label="L-match schematic: series L, then shunt C across the load R_L"></svg>
+      <div class="fields sm-fields">
+        <label><span>Load R<sub>L</sub></span><input id="sm-rl" type="number" min="100" max="2000" step="any" inputmode="decimal"><em>Ω &nbsp;(100 – 2000)</em></label>
+        <label><span>Carrier ω₀</span><input id="sm-w" type="number" min="0" step="any" inputmode="decimal"><em>rad/s</em></label>
+      </div>
+      <div class="sm-slider c">
+        <label><span>Shunt C</span><input id="sm-c" type="number" min="0" step="0.001" inputmode="decimal"><em>nF</em></label>
+        <input id="sm-c-slider" type="range" min="0" step="1" aria-label="Shunt capacitor C">
+        <small id="sm-c-max"></small>
+      </div>
+      <div class="sm-slider l">
+        <label><span>Series L</span><input id="sm-l" type="number" min="0" step="0.0001" inputmode="decimal"><em>mH</em></label>
+        <input id="sm-l-slider" type="range" min="0" step="1" aria-label="Series inductor L">
+        <small id="sm-l-max"></small>
+      </div>
+      <div id="sm-status" class="sm-status" role="status" aria-live="polite"></div>
+      <div id="sm-badge" class="readout sm-badge"></div>
+    </div>
+
+    <div class="card">
+      <h2>Smith chart · Z₀ = 50 Ω</h2>
+      <canvas id="sm-chart" class="smith" aria-label="Smith chart showing the load, the shunt-C arc and the series-L arc"></canvas>
+      <div class="legend sm-legend">
+        <span><span class="key" style="background:#1f2a3d"></span>z<sub>L</sub> = R<sub>L</sub>/50</span>
+        <span><span class="key" style="background:#0891b2"></span>shunt C: constant g<sub>L</sub> → z₂</span>
+        <span><span class="key" style="background:#c2410c"></span>series L: constant r₂ → z<sub>match</sub></span>
+        <span><span class="key" style="background:#d4a017"></span>r = 1 circle</span>
+        <span><span class="key dash"></span>g-circles</span>
+      </div>
+      <p class="hint">Hover over the chart to read z, Z and |Γ| at any point. The solid arcs are exact: they sweep each component from 0 up to its value.</p>
+    </div>
+  </div>
+</section>
+<!-- ============ Section 5: unity-gain buffer + amplifier compensation ============ -->
+<section id="amp" class="page" hidden>
+  <!-- unity-gain buffer: why −180° at gain = 1 oscillates (reads the design below) -->
+  <div class="bf-block">
+  <div class="intro">
+    <h1>Part A: Unity-Gain Op-Amp Buffer — From Ideal Follower to Ringing &amp; Oscillation</h1>
+    <p class="goal">V<sub>+</sub> = V<sub>in</sub> and V<sub>−</sub> = V<sub>out</sub>, so V<sub>out</sub> = A(s)(V<sub>+</sub> − V<sub>−</sub>) gives H<sub>CL</sub> = A / (1 + A). Where |A| = 1, the denominator is 1 + 1∠φ<sub>u</sub>.</p>
+    <ol class="steps">
+      <li>Inspect the unity-gain feedback loop</li>
+      <li>Test Phase = −180° at Gain = 1 (Division by Zero!)</li>
+      <li>Compare Uncompensated (X, Y) vs. −135° Target</li>
+      <li>Observe the closed-loop Step Response ringing &amp; oscillation</li>
+    </ol>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Unity-gain op-amp follower</h2>
+      <svg id="bf-schem" viewBox="0 0 640 300" role="img" aria-label="Op-amp follower: V+ = V_in, V− = V_out, V_out = A(s)(V+ − V−)"></svg>
+      <div id="bf-eq" class="eq"></div>
+      <div class="bf-presets" id="bf-presets" role="group" aria-label="Open-loop presets">
+        <button type="button" data-preset="1"><b>1. Single-Pole Op-Amp</b><small>Phase at f<sub>u</sub> ≈ −90° → unconditionally stable, no overshoot</small></button>
+        <button type="button" data-preset="2"><b>2. Well-Compensated Op-Amp</b><small>Phase at f<sub>u</sub> = −135° target → clean step response</small></button>
+        <button type="button" data-preset="3"><b>3. Uncompensated 2-Pole Op-Amp</b><small>Uses your X, Y from below → phase ≈ −168.5° (X = 0, Y = 1), severe ringing!</small></button>
+        <button type="button" data-preset="4"><b>4. Phase Crosses −180° at Gain = 1</b><small>1 + A(jω<sub>u</sub>) = 0 → self-sustaining oscillator!</small></button>
+      </div>
+      <div class="bf-slider" id="bf-slider">
+        <label for="bf-lag">Phase at unity gain</label>
+        <input id="bf-lag" type="range" min="90" max="195" step="0.5" aria-label="Phase at unity gain, degrees of lag">
+        <output id="bf-phi"></output>
+        <div class="bf-scale"><span>−90°</span><span>−135° target</span><span>−180° critical</span><span>−195°</span></div>
+      </div>
+      <div class="bf-live-row">
+        <button type="button" class="chip" id="bf-live">Load live design from Amplifier Compensation below ↓</button>
+      </div>
+      <p id="bf-source" class="hint"></p>
+      <svg id="bf-phasor" viewBox="0 0 480 250" role="img" aria-label="Phasor diagram at the unity-gain frequency: A on the unit circle and the vector 1 + A from minus one"></svg>
+    </div>
+
+    <div class="card">
+      <h2>What the buffer does</h2>
+      <div id="bf-readout" class="readout amp-readout bf-readout" aria-live="polite"></div>
+      <div class="plot-head"><span>Closed-loop step response v<sub>out</sub>(t) for a 1.0 V step</span></div>
+      <div class="legend"><span><span class="key dash-in"></span>v<sub>in</sub>(t) = 1.0 u(t)</span><span><span class="key out"></span>v<sub>out</sub>(t)</span></div>
+      <canvas id="bf-step" class="plot amp-plot"></canvas>
+      <div class="stats" id="bf-step-stats"></div>
+      <div class="plot-head"><span>Closed-loop magnitude |H<sub>CL</sub>(j2πf)|</span></div>
+      <div class="legend"><span><span class="key out"></span>|H<sub>CL</sub>| = |A / (1 + A)|</span><span><span class="key dash-ol"></span>open loop |A|</span></div>
+      <canvas id="bf-mag" class="plot amp-plot"></canvas>
+      <p id="bf-mag-note" class="hint"></p>
+      <svg id="bf-splane" viewBox="0 0 480 270" role="img" aria-label="Closed-loop poles in the s-plane"></svg>
+      <p id="bf-poles" class="bf-poles"></p>
+    </div>
+  </div>
+  </div>
+
+  <div class="intro">
+    <h1>Amplifier Compensation</h1>
+    <p class="goal">Adjust the compensation branch. Your goal: where the gain reaches 1 (0 dB), the phase should be −135° or higher.</p>
+    <ol class="steps">
+      <li>Look at the uncompensated response</li>
+      <li>Try C<sub>c</sub> = 10 pF, then 20 pF</li>
+      <li>Watch the poles move and the phase at gain = 1</li>
+      <li>Add R<sub>z</sub> in series with C<sub>c</sub></li>
+      <li>Check your design and save the trial</li>
+    </ol>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Amplifier circuit</h2>
+      <svg id="am-schem" viewBox="0 0 790 284" role="img" aria-label="Two-node amplifier: Vs through R1 to V1 with C1 to ground; gm V1 current source, R2 and C2 from V2 to ground; compensation branch Cc in series with Rz from V1 to V2"></svg>
+      <div class="amp-controls">
+        <div class="amp-row">
+          <label><span>X</span><select id="am-x" aria-label="X"></select></label>
+          <label><span>Y</span><select id="am-y" aria-label="Y"></select></label>
+          <span class="spacer"></span>
+          <button type="button" class="chip" id="am-reset" title="Compensation branch off, Cc = 10 pF, Rz = 0">Reset</button>
+        </div>
+        <div class="amp-row">
+          <span class="bar-label">Compensation branch</span>
+          <div class="seg small" id="am-on" role="group" aria-label="Compensation branch"><button type="button" data-on="0">Off</button><button type="button" data-on="1">On</button></div>
+        </div>
+        <div class="amp-row comp">
+          <label><span>C<sub>c</sub></span><input id="am-cc" type="number" min="0" step="any" inputmode="decimal" aria-label="Compensation capacitor in pF"><em>pF</em></label>
+          <button type="button" class="chip" data-cc="10">10 pF</button>
+          <button type="button" class="chip" data-cc="20">20 pF</button>
+        </div>
+        <div class="amp-row comp">
+          <label><span>R<sub>z</sub></span><input id="am-rz" type="number" min="0" step="any" inputmode="decimal" aria-label="Series resistor"><select id="am-rz-unit" aria-label="Rz unit"><option value="1">Ω</option><option value="1000">kΩ</option></select></label>
+        </div>
+      </div>
+      <div class="stats amp-fixed" id="am-fixed"></div>
+      <div id="am-roots" class="amp-roots"></div>
+    </div>
+
+    <div class="card">
+      <h2>Stability-test Bode plot</h2>
+      <div id="am-readout" class="readout amp-readout" aria-live="polite"></div>
+      <div class="plot-head"><span>Magnitude · open-loop gain A(s) = −V<sub>2</sub>/V<sub>s</sub></span></div>
+      <canvas id="am-mag" class="plot amp-plot"></canvas>
+      <div class="plot-head"><span>Phase</span></div>
+      <canvas id="am-phase" class="plot amp-plot"></canvas>
+    </div>
+  </div>
+
+  <div class="card wide">
+    <div class="trial-head"><h2>Trials</h2><button type="button" class="chip" id="am-save">Save trial</button><button type="button" class="chip" id="am-clear">Clear</button></div>
+    <div class="trial-wrap"><table class="trials">
+      <thead><tr><th>#</th><th>X, Y</th><th>C<sub>c</sub></th><th>R<sub>z</sub></th><th>Gain = 1 at</th><th>Phase there</th><th>Target</th></tr></thead>
+      <tbody id="am-trials"></tbody>
+    </table></div>
+  </div>
+</section>
 </main>
 
-<footer>Ideal R, L, C components; the circuit starts with no stored energy and every input is switched on at t = 0. Waveforms are exact solutions, not numerical approximations.</footer>
+<footer>Ideal R, L, C components. The circuit starts with no stored energy and every input is switched on at t = 0, except Dual-Tone, which shows the AC steady state by superposition. Waveforms are exact solutions, not numerical approximations. Smith chart impedances are normalized to Z₀ = 50 Ω. Every plot carries the student watermark entered at the top of the page.</footer>
 
 <script>
 // Tab switching via the URL hash so each section can be linked directly.
 (function () {
   function show() {
-    var id = location.hash === '#sandbox' ? 'sandbox' : 'pole-zero';
+    var id = ({ '#sandbox': 'sandbox', '#amp': 'amp', '#bullseye': 'bullseye', '#smith': 'smith' })[location.hash] || 'pole-zero';
     document.querySelectorAll('.page').forEach(function (p) { p.hidden = p.id !== id; });
     document.querySelectorAll('[data-tab]').forEach(function (a) { a.classList.toggle('on', a.dataset.tab === id); });
   }

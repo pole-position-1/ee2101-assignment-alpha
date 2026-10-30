@@ -190,6 +190,247 @@ function maxErr(sim, f, from = 0) {
   }
 }
 
+// ---------- matric number -> X, Y, Z ----------
+{
+  const p = E.parseMatric(' a1234567b ');
+  checks++; if (!p || p.id !== 'A1234567B' || p.X !== 7 || p.Y !== 6 || p.Z !== 5) { failures++; console.log('FAIL parseMatric A1234567B', p); }
+  const q = E.parseMatric('U2000000K'); // all three digits zero -> substitutes
+  checks++; if (!q || q.X !== 4 || q.Y !== 5 || q.Z !== 2) { failures++; console.log('FAIL parseMatric zero substitutes', q); }
+  checks++; if (E.parseMatric('AB12') !== null || E.parseMatric('') !== null || E.parseMatric('A12-345B') !== null) { failures++; console.log('FAIL parseMatric rejects bad input'); }
+}
+
+// ---------- branch impedance at jω, series and parallel ----------
+{
+  const w = 2 * Math.PI * 13.56e6, Rs = 50, RL = 500, Q = Math.sqrt(RL / Rs - 1);
+  const Lv = Q * Rs / w, Cv = Q / (w * RL);
+  // Part B L-match: Z1 = Rs + L, Z2 = RL || C; jωL + Z2 should be exactly Rs
+  const z2 = E.branchAt([R(RL), C(Cv)], 'parallel', w);
+  close('B: Re{Z2}', z2.re, Rs, 1e-12);
+  close('B: Im{Z2}', z2.im, -Q * Rs, 1e-12);
+  const zm = E.cadd({ re: 0, im: w * Lv }, z2);
+  close('B: Re{Zmatch} = Rs', zm.re, Rs, 1e-12);
+  close('B: Im{Zmatch} = 0', zm.im, 0, 1e-9);
+  // H from phasors agrees with H from the polynomial model
+  const z1 = E.branchAt([R(Rs), L(Lv)], 'series', w);
+  const h = E.cdiv(z2, E.cadd(z1, z2)), m = E.divider([R(Rs), L(Lv)], 'series', [R(RL), C(Cv)], 'parallel'), r = E.response(m, w);
+  close('B: phasor H re', h.re, r.re, 1e-9);
+  close('B: phasor H im', h.im, r.im, 1e-9);
+  // Part A trap: series LC is a short at its resonance
+  const w0 = 2 * Math.PI * 50, La = 1, Ca = 1 / (w0 * w0 * La);
+  const zt = E.branchAt([L(La), C(Ca)], 'series', w0);
+  close('A: series LC at resonance', Math.hypot(zt.re, zt.im), 0, 1e-9);
+  const zo = E.branchAt([L(La), C(Ca)], 'parallel', w0);
+  checks++; if (!(Math.hypot(zo.re, zo.im) > 1e12)) { failures++; console.log('FAIL parallel LC at resonance is open', zo); }
+}
+
+// ---------- zero-pole factor phase, including RHP and jω-axis zeros ----------
+{
+  const wp = 1000, wz = 4000, D = 180 / Math.PI;
+  const rhp = w => E.zpkResponse(1, [{ re: wz, im: 0 }], [{ re: -wp, im: 0 }], w);
+  const lhp = w => E.zpkResponse(1, [{ re: -wz, im: 0 }], [{ re: -wp, im: 0 }], w);
+  // An RHP zero alone: +20 dB/dec like an LHP zero, but phase lags to −90°
+  const z1 = w => E.zpkResponse(1, [{ re: wz, im: 0 }], [], w);
+  close('RHP zero slope', 20 * Math.log10(z1(1e4 * wz).mag / z1(1e3 * wz).mag), 20, 1e-6);
+  close('RHP zero phase at ωz', z1(wz).phase, -45, 1e-12);
+  close('RHP zero phase at 1e4 ωz', z1(1e4 * wz).phase, -90 + Math.atan(1e-4) * D, 1e-9);
+  close('LHP zero phase at ωz', E.zpkResponse(1, [{ re: -wz, im: 0 }], [], wz).phase, 45, 1e-12);
+  // Same magnitude as the LHP mirror, phase −atan(ω/ωz) − atan(ω/ωp) → −180°
+  [10, 1e3, 3e3, 1e5, 1e8].forEach(w => {
+    close(`RHP |H| = LHP |H| at ${w}`, rhp(w).mag, lhp(w).mag, 1e-12);
+    close(`RHP ∠H at ${w}`, rhp(w).phase, -(Math.atan(w / wz) + Math.atan(w / wp)) * D, 1e-9);
+  });
+  // Magnitude agrees with the polynomial model; phase agrees modulo 360°
+  const m = { n: [1, -1 / wz], d: [1, 1 / wp] };
+  [10, 2e3, 1e6].forEach(w => {
+    const a = rhp(w), b = E.response(m, w);
+    close(`RHP zpk vs polynomial |H| at ${w}`, a.mag, b.mag, 1e-12);
+    close(`RHP zpk vs polynomial ∠H at ${w}`, ((a.phase - b.phase) % 360 + 540) % 360 - 180, 0, 1e-9);
+  });
+  // RHP complex pair lags to −180°, LHP pair leads to +180°, continuously
+  const pair = (re, im) => [{ re, im }, { re, im: -im }];
+  let prev = 0, jump = 0;
+  for (let i = 0; i <= 400; i++) {
+    const w = 10 ** (1 + 5 * i / 400), ph = E.zpkResponse(1, pair(500, 3000), [], w).phase;
+    jump = Math.max(jump, Math.abs(ph - prev)); prev = ph;
+  }
+  close('RHP pair phase is continuous', jump < 20 ? 0 : jump, 0, 0);
+  close('RHP pair phase → −180°', E.zpkResponse(1, pair(500, 3000), [], 1e9).phase, -180, 1e-4);
+  close('LHP pair phase → +180°', E.zpkResponse(1, pair(-500, 3000), [], 1e9).phase, 180, 1e-4);
+  // jω-axis pair: a perfect notch with a 180° phase step
+  const notch = w => E.zpkResponse(1, pair(0, 3000), [], w);
+  close('jω pair |H| at ωn', notch(3000).mag, 0, 1e-12);
+  close('jω pair ∠H below ωn', notch(2999).phase, 0, 1e-12);
+  close('jω pair ∠H above ωn', notch(3001).phase, 180, 1e-12);
+}
+
+// ---------- complex-conjugate poles ----------
+{
+  const wn = 2000, D = 180 / Math.PI;
+  [0.05, 0.2, 0.5, 0.9].forEach(zeta => {
+    const p = [{ re: -zeta * wn, im: wn * Math.sqrt(1 - zeta * zeta) }, { re: -zeta * wn, im: -wn * Math.sqrt(1 - zeta * zeta) }];
+    const h = w => E.zpkResponse(1, [], p, w);
+    // closed forms for 1/(1 + 2ζ s/ωn + (s/ωn)²)
+    close(`pair ζ=${zeta}: |H(jωn)| = 1/(2ζ)`, h(wn).mag, 1 / (2 * zeta), 1e-12);
+    close(`pair ζ=${zeta}: ∠H(jωn) = −90°`, h(wn).phase, -90, 1e-9);
+    [0.1, 0.7, 3, 50].forEach(x => {
+      const w = x * wn, want = -Math.atan2(2 * zeta * x, 1 - x * x) * D;
+      close(`pair ζ=${zeta}: ∠H at ${x}ωn`, h(w).phase, want, 1e-9);
+      close(`pair ζ=${zeta}: |H| at ${x}ωn`, h(w).mag, 1 / Math.hypot(1 - x * x, 2 * zeta * x), 1e-12);
+    });
+    close(`pair ζ=${zeta}: −40 dB/dec`, 20 * Math.log10(h(1e5 * wn).mag / h(1e4 * wn).mag), -40, 1e-6);
+    if (zeta < Math.SQRT1_2) close(`pair ζ=${zeta}: peak 1/(2ζ√(1−ζ²))`, h(wn * Math.sqrt(1 - 2 * zeta * zeta)).mag, 1 / (2 * zeta * Math.sqrt(1 - zeta * zeta)), 1e-12);
+  });
+  // complex zeros over complex poles: equal pairs cancel exactly
+  const pr = [{ re: -300, im: 1500 }, { re: -300, im: -1500 }];
+  close('pair/pair cancellation', E.zpkResponse(2, pr, pr, 1234).mag, 2, 1e-12);
+  close('pair/pair cancellation phase', E.zpkResponse(2, pr, pr, 1234).phase, 0, 1e-12);
+}
+
+// ---------- dual-tone steady state by superposition ----------
+{
+  // RC low-pass, then compare with the exact causal response long after switch-on
+  const R1 = 1e3, Cv = 1e-6, wc = 1 / (R1 * Cv), w0 = 2 * wc;
+  const m = E.divider([R(R1)], 'series', [C(Cv)], 'series');
+  const list = [{ amp: 1, w: 0.1 * w0, phase: 0 }, { amp: 5, w: w0, phase: -60 }];
+  const ss = E.tones(m, list, 1e-2);
+  const H = w => 1 / Math.hypot(1, w / wc), P = w => -Math.atan(w / wc);
+  const want = t => H(0.1 * w0) * Math.cos(0.1 * w0 * t + P(0.1 * w0)) + 5 * H(w0) * Math.cos(w0 * t - Math.PI / 3 + P(w0));
+  close('dual-tone v_out', maxErr(ss, want, -1), 0, 1e-12);
+  close('dual-tone v_in(0)', ss.u[0], 1 + 5 * Math.cos(-Math.PI / 3), 1e-12);
+  // 5 sin(ω0 t + 30°) is 5 cos(ω0 t − 60°)
+  close('dual-tone sine form', ss.u[7] - Math.cos(0.1 * w0 * ss.t[7]), 5 * Math.sin(w0 * ss.t[7] + Math.PI / 6), 1e-12);
+  // after 40 τ the causal cosine/sine responses match the steady state
+  const win = 40 / wc, a = E.simulate(m, { type: 'cosine', amp: 1, w: 0.1 * w0 }, win, { samples: 20000, preRoll: 0 });
+  const b = E.simulate(m, { type: 'cosine', amp: 5, w: w0 }, win, { samples: 20000, preRoll: 0 });
+  const c = E.simulate(m, { type: 'sine', amp: 5, w: w0 }, win, { samples: 20000, preRoll: 0 });
+  const k = a.t.length - 1, tk = a.t[k];
+  const causal = a.y[k] + Math.cos(-Math.PI / 3) * b.y[k] - Math.sin(-Math.PI / 3) * c.y[k];
+  close('dual-tone vs causal at 40τ', causal, want(tk), 1e-9);
+  // a series-LC trap tuned to ω0 removes the hum completely
+  const w50 = 2 * Math.PI * 50, trap = E.divider([R(1e3)], 'series', [L(1), C(1 / (w50 * w50))], 'series');
+  const tr = E.tones(trap, [{ amp: 1, w: 0.1 * w50, phase: 0 }, { amp: 5, w: w50, phase: -60 }], 0.4);
+  close('trap: hum at output', tr.parts[1].outAmp, 0, 1e-9);
+}
+
+// ---------- Smith chart L-match: shunt C then series L ----------
+{
+  const w = 5e5, RL = 500, d = E.lmatchDesign(RL, w);
+  close('smith: Q', d.Q, 3, 1e-12);
+  close('smith: C', d.C, 12e-9, 1e-12);
+  close('smith: L', d.L, 0.3e-3, 1e-12);
+  const m = E.lmatch(RL, w, d.C, d.L);
+  close('smith: Re Z2 = Z0', m.Z2.re, 50, 1e-9);
+  close('smith: Im Z2', m.Z2.im, -150, 1e-9);
+  close('smith: Zmatch = 50', Math.hypot(m.Zm.re - 50, m.Zm.im), 0, 1e-9);
+  close('smith: |Γ| at match', m.mag, 0, 1e-12);
+  close('smith: VSWR at match', m.vswr, 1, 1e-12);
+  close('smith: |Vout/Vin| at match = ½√(R_L/R_S)', m.gain, Math.sqrt(RL / 50) / 2, 1e-12);
+  close('smith: |Vout/Vin| unmatched = R_L/(R_S+R_L)', E.lmatch(RL, w, 0, 0).gain, RL / 550, 1e-12);
+  // gain agrees with the sandbox divider Z1 = R_S + L, Z2 = R_L ∥ C
+  close('smith: gain vs divider', E.response(E.divider([R(50), L(d.L)], 'series', [R(RL), C(d.C)], 'parallel'), w).mag, m.gain, 1e-9);
+  const n = E.lmatch(RL, w, 0, 0);
+  close('smith: unmatched Γ', n.gamma.re, 450 / 550, 1e-12);
+  close('smith: unmatched VSWR = R_L/Z0', n.vswr, 10, 1e-9);
+  for (const R of [100, 731, 2000]) {
+    const g = E.lmatch(R, 2e6, E.lmatchDesign(R, 2e6).C, E.lmatchDesign(R, 2e6).L);
+    close('smith: match R_L=' + R, g.mag, 0, 1e-9);
+    // shunt C keeps the load conductance: Re(1/Z2) = 1/R_L
+    close('smith: constant-g arc R_L=' + R, E.cdiv({ re: 1, im: 0 }, g.Z2).re, 1 / R, 1e-15);
+  }
+  close('smith: |Γ| = 1 for pure reactance', Math.hypot(E.reflect({ re: 0, im: 37 }).re, E.reflect({ re: 0, im: 37 }).im), 1, 1e-12);
+}
+
+// ---------- amplifier compensation: A(s) = −V2/Vs, assignment acceptance values ----------
+{
+  const base = { R1: 10e3, gm: 1e-3, R2: 100e3, C1: 100e-12, C2: 10e-12 };
+  const unity = a => {
+    const ws = E.magCrossings(a, 1, 1, 1e12, 8000);
+    return ws.map(w => ({ f: w / (2 * Math.PI), ph: E.unwrappedPhase(a, a.zeros, a.poles, w) }));
+  };
+  const table = [[0, 0, 1.5836e6, -168.5], [10e-12, 0, 905.2e3, -135.2], [20e-12, 0, 594.0e3, -120.0], [10e-12, 1e3, 909.8e3, -133.1], [10e-12, 2e3, 916.3e3, -131.0]];
+  for (const [Cc, Rz, f, ph] of table) {
+    const a = E.ampLoop({ ...base, Cc, Rz }), u = unity(a), tag = `amp Cc=${Cc * 1e12}p Rz=${Rz}`;
+    close(tag + ': DC gain 100 V/V', a.k0, 100, 1e-12);
+    close(tag + ': one unity crossing', u.length, 1, 0);
+    close(tag + ': unity f', u[0].f / f, 1, 6e-5);
+    close(tag + ': phase there', u[0].ph, ph, 0.05);
+  }
+  const p0 = E.ampLoop(base);
+  close('amp off: double pole', Math.max(...p0.poles.map(p => Math.abs(p.re + 1e6) + Math.abs(p.im))), 0, 1);
+  close('amp off: no zero', p0.zeros.length, 0, 0);
+  const p10 = E.ampLoop({ ...base, Cc: 10e-12 });
+  close('amp 10p: p1', p10.poles[0].re, -7.7294e4, 0.5);
+  close('amp 10p: p2', p10.poles[1].re, -6.1608e6, 50);
+  close('amp 10p: RHP zero +1e8', p10.zeros[0].re, 1e8, 1e-3);
+  close('amp 1k: no finite zero', E.ampLoop({ ...base, Cc: 10e-12, Rz: 1e3 }).zeros.length, 0, 0);
+  const p2k = E.ampLoop({ ...base, Cc: 10e-12, Rz: 2e3 });
+  close('amp 2k: LHP zero −1e8', p2k.zeros[0].re, -1e8, 1e-3);
+  close('amp 2k: three poles', p2k.poles.length, 3, 0);
+  close('amp 20p: phase target met', unity(E.ampLoop({ ...base, Cc: 20e-12 }))[0].ph >= -135, 1, 0);
+  close('amp 10p: phase target missed', unity(p10)[0].ph >= -135, 0, 0);
+  // the closed form against direct two-node nodal analysis at complex s
+  for (const p of [{ ...base, Cc: 10e-12, Rz: 2e3 }, { R1: 19e3, gm: 9e-3, R2: 100e3, C1: 100e-12, C2: 10e-12, Cc: 3.3e-12, Rz: 470 }]) {
+    for (const w of [1e3, 3e5, 2e7, 1e9]) {
+      const s = { re: 0.3 * w, im: w }, G1 = 1 / p.R1, G2 = 1 / p.R2;
+      const Yc = E.cdiv({ re: s.re * p.Cc, im: s.im * p.Cc }, { re: 1 + s.re * p.Rz * p.Cc, im: s.im * p.Rz * p.Cc }); // sCc/(1 + sRzCc)
+      // [Y11 Y12; Y21 Y22][V1; V2] = [G1·Vs; 0], with the gm·V1 sink in row 2
+      const Y11 = E.cadd({ re: G1 + s.re * p.C1, im: s.im * p.C1 }, Yc), Y12 = { re: -Yc.re, im: -Yc.im };
+      const Y21 = { re: p.gm - Yc.re, im: -Yc.im }, Y22 = E.cadd({ re: G2 + s.re * p.C2, im: s.im * p.C2 }, Yc);
+      const det = E.cadd(E.cmul(Y11, Y22), { re: -E.cmul(Y12, Y21).re, im: -E.cmul(Y12, Y21).im });
+      const V2 = E.cdiv(E.cmul({ re: -G1, im: 0 }, Y21), det); // Vs = 1
+      const a = E.ampLoop(p), ev = (q, z) => q.reduceRight((acc, c) => E.cadd(E.cmul(acc, z), { re: c, im: 0 }), { re: 0, im: 0 });
+      const F = E.cdiv(ev(a.n, s), ev(a.d, s));
+      close('amp nodal check ω=' + w, Math.hypot(F.re + V2.re, F.im + V2.im) / Math.hypot(F.re, F.im), 0, 1e-12);
+    }
+  }
+  // poles from the polynomial really are roots, even when they span 4 decades
+  for (const r of p2k.poles) {
+    const v = p2k.d.reduceRight((acc, c) => E.cadd(E.cmul(acc, r), { re: c, im: 0 }), { re: 0, im: 0 });
+    const scale = p2k.d.reduce((s2, c, i) => s2 + Math.abs(c) * Math.hypot(r.re, r.im) ** i, 0);
+    close('amp pole residual ' + r.re.toExponential(2), Math.hypot(v.re, v.im) / scale, 0, 1e-12);
+  }
+}
+
+// ---------- unity-gain buffer: three-pole model with a set phase at |A| = 1 ----------
+{
+  const wu = 2 * Math.PI * 1e6, K0 = 100;
+  for (const phi of [-100, -135, -168, -180, -190, -195]) {
+    const m = E.bufferModel(phi, wu, K0), r = E.response(m, wu);
+    close(`buffer ${phi}: |A(jωu)| = 1`, r.mag, 1, 1e-12);
+    close(`buffer ${phi}: ∠A(jωu)`, E.unwrappedPhase(m, m.zeros, m.poles, wu), phi, 1e-9);
+    const u = E.magCrossings(m, 1, 1, 1e14, 12000);
+    close(`buffer ${phi}: one unity crossing`, u.length, 1, 0);
+    close(`buffer ${phi}: crossing at ωu`, u[0], wu, 1e-9);
+    const cl = E.unityFeedback(m);
+    close(`buffer ${phi}: closed-loop DC gain K0/(1+K0)`, E.dcGain(cl), K0 / (1 + K0), 1e-12);
+    // H_CL = A/(1 + A) at a test frequency, from the open loop directly
+    const w = 0.7 * wu, F = E.response(m, w), H = E.response(cl, w);
+    const want = E.cdiv({ re: F.re, im: F.im }, { re: 1 + F.re, im: F.im });
+    close(`buffer ${phi}: H_CL = A/(1+A)`, Math.hypot(H.re - want.re, H.im - want.im) / Math.hypot(want.re, want.im), 0, 1e-12);
+    const maxRe = Math.max(...E.polishedRoots(cl.d).map(p => p.re)) / wu;
+    if (phi > -180) close(`buffer ${phi}: closed loop stable`, +(maxRe < -1e-3), 1, 0);
+    if (phi < -180) close(`buffer ${phi}: closed loop has RHP poles`, +(maxRe > 1e-3), 1, 0);
+  }
+  // −90°: a true single-pole amplifier; the step is a plain exponential, no overshoot
+  {
+    const m = E.bufferModel(-90, wu, K0);
+    close('buffer −90: one pole', m.poles.length, 1, 0);
+    close('buffer −90: |A(jωu)| = 1', E.response(m, wu).mag, 1, 1e-12);
+    close('buffer −90: phase −atan(√(K0² − 1))', E.response(m, wu).phase, -Math.atan(Math.sqrt(K0 * K0 - 1)) * 180 / Math.PI, 1e-9);
+    const s = E.simulate(E.unityFeedback(m), { type: 'step', amp: 1 }, 10 / 1e6);
+    close('buffer −90: no overshoot', +(Math.max(...s.y) <= K0 / (1 + K0) * (1 + 1e-9)), 1, 0);
+  }
+  // −180°: 1 + F(jωu) = 0, so ±jωu are closed-loop poles and the step rings forever at fu
+  const m = E.bufferModel(-180, wu, K0), cl = E.unityFeedback(m), Fu = E.response(m, wu);
+  close('buffer −180: 1 + A(jωu) = 0', Math.hypot(1 + Fu.re, Fu.im), 0, 1e-12);
+  const top = E.polishedRoots(cl.d).filter(p => p.im > 0)[0];
+  close('buffer −180: pole real part', top.re / wu, 0, 1e-9);
+  close('buffer −180: pole at +jωu', top.im, wu, 1e-9);
+  const sim = E.simulate(cl, { type: 'step', amp: 1 }, 20 / 1e6, { samples: 8000 });
+  const swing = (a, b) => { const ys = sim.y.filter((_, i) => sim.t[i] >= a && sim.t[i] < b); return Math.max(...ys) - Math.min(...ys); };
+  close('buffer −180: oscillation neither grows nor decays', swing(16e-6, 20e-6), swing(12e-6, 16e-6), 1e-4);
+}
+
 // ---------- error handling ----------
 {
   let msg = '';

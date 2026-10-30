@@ -35,6 +35,7 @@
       this.c = canvas; this.o = opts; this.data = null; this.mouse = null;
       this.base = document.createElement('canvas');
       new ResizeObserver(() => this.render()).observe(canvas);
+      if (root.Watermark) Watermark.onChange(() => this.render());
       canvas.addEventListener('pointermove', e => {
         this.mouse = this.local(e);
         const x = this.toX(this.mouse.x);
@@ -136,6 +137,7 @@
       for (const a of d.arrows || []) if (a.label) {
         g.fillStyle = a.color; g.textAlign = 'left'; g.textBaseline = 'top'; g.fillText(a.label, this.sx(a.x) + 9, Math.max(T + 2, this.sy(a.y1)));
       }
+      if (root.Watermark) Watermark.drawCanvas(g, L, T, R, B);
       void w;
     }
     line(g, x1, y1, x2, y2, color, dash, width) {

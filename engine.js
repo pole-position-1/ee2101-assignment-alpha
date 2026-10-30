@@ -51,7 +51,41 @@
     return { n: n.map(x => x / k), d: d.map(x => x / k) };
   }
 
+  // ---------- phasors ----------
+  const cadd = (a, b) => ({ re: a.re + b.re, im: a.im + b.im });
+  const cmul = (a, b) => ({ re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re });
+  const cdiv = (a, b) => { const q = b.re * b.re + b.im * b.im; return { re: (a.re * b.re + a.im * b.im) / q, im: (a.im * b.re - a.re * b.im) / q }; };
+  // Impedance of one branch at s = jω as a complex number. Series parts add as
+  // Z = R + jωL + 1/(jωC); parallel parts add as Y = 1/R + 1/(jωL) + jωC.
+  function branchAt(list, mode, w) {
+    const z = c => {
+      impedance(c);
+      return c.type === 'R' ? { re: c.value, im: 0 } : c.type === 'L' ? { re: 0, im: w * c.value } : { re: 0, im: -1 / (w * c.value) };
+    };
+    if (mode !== 'parallel') return list.map(z).reduce(cadd, { re: 0, im: 0 });
+    const y = list.map(c => cdiv({ re: 1, im: 0 }, z(c))).reduce(cadd, { re: 0, im: 0 });
+    return y.re === 0 && y.im === 0 ? { re: Infinity, im: 0 } : cdiv({ re: 1, im: 0 }, y);
+  }
+
   // ---------- frequency response ----------
+  // Angle (rad) of the factor (1 − s/r) at s = jω, i.e. arg(jω − r) − arg(−r),
+  // both from atan2. For a root in the right half plane jω − r always points
+  // left, so atan2 is taken on [0, 2π) there to stay continuous in ω: an RHP
+  // zero then lags towards −90° instead of jumping by 360°.
+  function factorAngle(r, w) {
+    let a = Math.atan2(w - r.im, -r.re), b = Math.atan2(-r.im, -r.re);
+    if (r.re > 0) { if (a < 0) a += 2 * Math.PI; if (b < 0) b += 2 * Math.PI; }
+    return a - b;
+  }
+  // H(jω) for H(s) = K0 Π(1 − s/z) / Π(1 − s/p), built factor by factor so the
+  // phase is continuous (unlike atan2 of the whole H, which wraps at ±180°).
+  function zpkResponse(k, zeros, poles, w) {
+    let mag = Math.abs(k), ph = k < 0 ? Math.PI : 0;
+    for (const z of zeros) { mag *= Math.hypot(z.re, w - z.im) / Math.hypot(z.re, z.im); ph += factorAngle(z, w); }
+    for (const p of poles) { mag /= Math.hypot(p.re, w - p.im) / Math.hypot(p.re, p.im); ph -= factorAngle(p, w); }
+    return { mag, phase: ph * 180 / Math.PI };
+  }
+
   function evalAt(p, re, im) { // Horner with complex s = re + j im
     let a = 0, b = 0;
     for (let k = p.length - 1; k >= 0; k--) { const t = a * re - b * im + p[k]; b = a * im + b * re; a = t; }
@@ -242,7 +276,125 @@
     return { t, u, y, direct: type === 'impulse' ? sys.D * amp : 0 };
   }
 
-  const api = { add, mul, trim, impedance, divider, response, dcGain, magCrossings, cutoff, phaseCrossing, roots, simulate, expm };
+  /*
+   * AC steady state for a sum of tones amp·cos(ωt + phase°), by superposition:
+   * each tone comes out scaled by |H(jω)| and shifted by ∠H(jω). There is no
+   * switch-on transient; the tones are taken to have been on forever.
+   * Returns arrays t, u, y from t = 0, and per-tone gains in `parts`.
+   */
+  function tones(m, list, duration, samples = 4000) {
+    if (!(duration > 0 && Number.isFinite(duration))) throw Error('Enter a positive time window.');
+    if (!list.every(x => x.w > 0 && Number.isFinite(x.w))) throw Error('Enter a positive frequency.');
+    const wMax = Math.max(...list.map(x => x.w));
+    const count = Math.min(60000, Math.max(samples, Math.ceil(duration * wMax / (2 * Math.PI) * 48)));
+    const rad = Math.PI / 180;
+    const parts = list.map(x => {
+      const r = response(m, x.w);
+      if (!Number.isFinite(r.mag)) throw Error('The circuit has a pole on the jω axis at one of the tone frequencies.');
+      return { ...x, mag: r.mag, dphase: r.phase, outAmp: x.amp * r.mag, outPhase: x.phase + r.phase };
+    });
+    const t = [], u = [], y = [];
+    for (let i = 0; i <= count; i++) {
+      const ti = duration * i / count;
+      t.push(ti);
+      u.push(parts.reduce((s, p) => s + p.amp * Math.cos(p.w * ti + p.phase * rad), 0));
+      y.push(parts.reduce((s, p) => s + p.outAmp * Math.cos(p.w * ti + p.outPhase * rad), 0));
+    }
+    return { t, u, y, parts };
+  }
+
+  // Assignment parameters from a matric number such as A1234567B: the last three
+  // digits give X (last), Y (second-to-last) and Z (third-to-last), with a 0
+  // replaced by 4, 5 and 2 respectively. Returns null if it is not usable.
+  function parseMatric(s) {
+    const id = String(s || '').toUpperCase().replace(/\s+/g, ''), d = id.replace(/\D/g, '');
+    if (!/^[A-Z0-9]{4,15}$/.test(id) || d.length < 3) return null;
+    const pick = (i, sub) => +d[d.length - i] || sub;
+    return { id, X: pick(1, 4), Y: pick(2, 5), Z: pick(3, 2) };
+  }
+
+  // ---------- two-node amplifier with a compensation branch ----------
+  // V1: R1 from the source Vs, C1 to ground. V2: R2, C2 and a g_m·V1 current
+  // sink to ground. The compensation branch Cc (in series with Rz) joins V1 to V2.
+  // Returns the open-loop gain A(s) = −V2/Vs used in the stability test. The
+  // test inverts V2 with an ideal, non-loading stage (Vo = −V2) and closes unity
+  // negative feedback (Vs = Vref − Vo), so A is the loop gain and its phase
+  // starts near 0°:
+  //   A = G1[gm + sCc(gm·Rz − 1)] / {(1 + sRzCc)(G1 + sC1)(G2 + sC2) + sCc[G1 + G2 + gm + s(C1 + C2)]}
+  // Cc = 0 is the uncompensated amplifier. Roots are in rad/s.
+  function ampLoop({ R1, gm, R2, C1, C2, Cc = 0, Rz = 0 }) {
+    const G1 = 1 / R1, G2 = 1 / R2;
+    // gm·Rz = 1 cancels the s term exactly: no finite zero
+    const kz = Math.abs(gm * Rz - 1) < 1e-9 ? 0 : gm * Rz - 1;
+    const n = trim([G1 * gm, G1 * Cc * kz]);
+    const d = trim(add(mul(mul([1, Rz * Cc], [G1, C1]), [G2, C2]), mul([0, Cc], [G1 + G2 + gm, C1 + C2])));
+    const m = { n, d };
+    return { ...m, k0: n[0] / d[0], zeros: polishedRoots(n), poles: polishedRoots(d) };
+  }
+  // Roots refined by a few Newton steps on the original polynomial, so roots
+  // decades apart (10⁴ and 10⁹ rad/s) keep full relative accuracy.
+  function polishedRoots(p) {
+    return roots(p).map(r => {
+      for (let i = 0; i < 8; i++) {
+        const v = evalAt(p, r.re, r.im), dv = evalAt(p.slice(1).map((c, k) => c * (k + 1)), r.re, r.im);
+        if (!(dv.re || dv.im)) break;
+        const st = cdiv(v, dv), nr = { re: r.re - st.re, im: r.im - st.im };
+        if (!Number.isFinite(nr.re) || !Number.isFinite(nr.im)) break;
+        r = nr;
+      }
+      return Math.abs(r.im) < 1e-7 * Math.hypot(r.re, r.im) ? { re: r.re, im: 0 } : r;
+    });
+  }
+  // Continuous phase in degrees: the exact angle of n/d, moved by whole turns to
+  // the factor-by-factor (unwrapped) estimate built from the roots.
+  function unwrappedPhase(m, zeros, poles, w) {
+    const exact = response(m, w).phase, guide = zpkResponse(m.n[0] / m.d[0], zeros, poles, w).phase;
+    return exact + 360 * Math.round((guide - exact) / 360);
+  }
+
+  // ---------- unity-gain buffer ----------
+  // Open-loop A(s) = K0 / [(1 + s/p1)(1 + s/p2)²] with |A(jωu)| = 1 and
+  // ∠A(jωu) = φu exactly. The dominant pole p1 sets the gain and the repeated
+  // pole p2 supplies the rest of the lag; the two conditions are applied in turn
+  // until they agree, which converges fast because p1 ≪ ωu. For φu ≥ −90° the
+  // pair is dropped: a single-pole amplifier, whose phase at ωu is
+  // −atan(√(K0² − 1)), just short of −90°.
+  function bufferModel(phiDeg, wu, K0 = 100) {
+    let p1 = wu / K0, p2 = Infinity;
+    for (let i = 0; i < 80; i++) {
+      const lag = -phiDeg * Math.PI / 180 - Math.atan(wu / p1);
+      p2 = lag > 1e-12 && phiDeg < -90 ? wu / Math.tan(lag / 2) : Infinity;
+      const pair = Number.isFinite(p2) ? 1 + (wu / p2) ** 2 : 1;
+      p1 = wu / Math.sqrt((K0 / pair) ** 2 - 1);
+    }
+    const d = Number.isFinite(p2) ? mul([1, 1 / p1], mul([1, 1 / p2], [1, 1 / p2])) : [1, 1 / p1];
+    const poles = [{ re: -p1, im: 0 }].concat(Number.isFinite(p2) ? [{ re: -p2, im: 0 }, { re: -p2, im: 0 }] : []);
+    return { n: [K0], d, k0: K0, p1, p2, zeros: [], poles };
+  }
+  // Follower: V− = Vout, so Vd = Vin − Vout and Vout = F·Vd give
+  // H_CL = A/(1 + A) = n/(n + d). Its poles are the roots of 1 + A(s) = 0.
+  const unityFeedback = m => ({ n: m.n.slice(), d: add(m.n, m.d) });
+
+  // Reflection coefficient Γ = (Z − Z0)/(Z + Z0); |Γ| = 1 for any lossless Z.
+  const reflect = (Z, Z0 = 50) => cdiv({ re: Z.re - Z0, im: Z.im }, { re: Z.re + Z0, im: Z.im });
+
+  // L-match of a resistive load R_L at ω: shunt C across the load first,
+  // then L in series, so Z2 = R_L ∥ (1/jωC) and Zmatch = Z2 + jωL. gain is
+  // |V_out/V_in| for a source V_in with R_S = Z0: |Z2| / |Z0 + Zmatch|.
+  function lmatch(RL, w, C, L, Z0 = 50) {
+    const Z2 = cdiv({ re: 1, im: 0 }, { re: 1 / RL, im: w * C });
+    const Zm = cadd(Z2, { re: 0, im: w * L });
+    const gamma = reflect(Zm, Z0), mag = Math.hypot(gamma.re, gamma.im);
+    const gain = Math.hypot(Z2.re, Z2.im) / Math.hypot(Zm.re + Z0, Zm.im);
+    return { Z2, Zm, gamma, mag, vswr: mag < 1 ? (1 + mag) / (1 - mag) : Infinity, gain };
+  }
+  // Exact design for R_L > Z0: Q = √(R_L/Z0 − 1), C = Q/(ωR_L), L = QZ0/ω.
+  function lmatchDesign(RL, w, Z0 = 50) {
+    const Q = Math.sqrt(RL / Z0 - 1);
+    return { Q, C: Q / (w * RL), L: Q * Z0 / w };
+  }
+
+  const api = { add, mul, trim, impedance, divider, branchAt, cadd, cmul, cdiv, reflect, lmatch, lmatchDesign, ampLoop, bufferModel, unityFeedback, polishedRoots, unwrappedPhase, response, factorAngle, zpkResponse, dcGain, magCrossings, cutoff, phaseCrossing, roots, simulate, tones, parseMatric, expm };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(typeof window === 'undefined' ? {} : window);

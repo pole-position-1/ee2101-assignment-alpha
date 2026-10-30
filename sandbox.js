@@ -22,6 +22,19 @@
       branches: [{ mode: 'parallel', items: [part('R', 9, 1e6), part('C', 2, 1e-12)] }, { mode: 'parallel', items: [part('R', 1, 1e6), part('C', 90, 1e-12)] }],
       unit: 'hz', gen: { type: 'square', amp: 1, w: TWO_PI * 1e5, auto: true, win: null }, x10: true,
     }),
+    // Assignment topologies with example values (students substitute their own designs)
+    partA: () => ({ // ECG notch: series-LC trap to ground tuned to 50 Hz hum
+      branches: [{ mode: 'series', items: [part('R', 1, 1e3)] }, { mode: 'series', items: [part('L', 1, 1), part('C', 10.13, 1e-6)] }],
+      unit: 'hz', gen: { type: 'dual', amp: 1, w: TWO_PI * 50, auto: true, win: null }, x10: false,
+    }),
+    partB: () => ({ // RFID L-match at 13.56 MHz: 500 Ω load presented as 50 Ω
+      branches: [{ mode: 'series', items: [part('R', 50, 1), part('L', 1.7606, 1e-6)] }, { mode: 'parallel', items: [part('R', 500, 1), part('C', 70.423, 1e-12)] }],
+      unit: 'hz', gen: { type: 'cosine', amp: 1, w: TWO_PI * 13.56e6, auto: true, win: null }, x10: false,
+    }),
+    partC: () => ({ // nulling resistor in series with the compensation capacitor
+      branches: [{ mode: 'series', items: [part('R', 10, 1e3)] }, { mode: 'series', items: [part('R', 1, 1e3), part('C', 10, 1e-9)] }],
+      unit: 'rad', gen: { type: 'step', amp: 1, w: null, auto: true, win: null }, x10: false,
+    }),
     empty: () => ({
       branches: [{ mode: 'series', items: [] }, { mode: 'series', items: [] }],
       unit: state.unit, gen: { ...state.gen, auto: true }, x10: false,
@@ -209,14 +222,13 @@
       { text: `|H| = ${num(r.mag)} V/V  (${num(20 * Math.log10(r.mag), 3)} dB)`, color: COLORS.in },
       ...(current.ref ? [{ text: `|H/${current.refName}| = ${num(20 * Math.log10(r.mag / current.ref), 3)} dB`, color: COLORS.in }] : []),
       { text: `∠H = ${num(r.phase)}°`, color: COLORS.in },
-      { text: 'click to use as test frequency', color: '#8a94a6' },
+      { text: `click to move the ${fSym()}₀ cursor here`, color: '#8a94a6' },
     ];
   };
   const setTestFreq = x => {
-    state.gen.w = x * factor();
-    if (state.gen.type === 'step' || state.gen.type === 'impulse') state.gen.type = 'cosine';
+    state.gen.w = Number(x.toPrecision(4)) * factor();
     state.gen.auto = true;
-    syncGenerator(); update();
+    update();
   };
   const magPlot = new Plot($('mag'), { xLog: true, xLabel: '', yLabel: '|H|  (dB)', hover: bodeHover, onClick: setTestFreq, xTick: dispTick });
   const phasePlot = new Plot($('phase'), { xLog: true, xLabel: '', yLabel: '∠H  (°)', hover: bodeHover, onClick: setTestFreq, xTick: dispTick });
@@ -241,10 +253,16 @@
     ymin = Math.floor((ymin - 2) / ys) * ys; ymax = Math.ceil((ymax + 2) / ys) * ys;
     let pmin = Math.floor((Math.min(...ph) - 5) / 45) * 45, pmax = Math.ceil((Math.max(...ph) + 5) / 45) * 45;
     pmin = Math.min(pmin, -45); pmax = Math.max(pmax, 45);
-    const test = state.gen.w / f, showTest = ['sine', 'cosine', 'square'].includes(state.gen.type) && test >= lo && test <= hi;
-    const vLines = [];
+    const test = state.gen.w / f, showTest = test >= lo && test <= hi;
+    const vLines = [], magPts = [], phPts = [];
     if (cut) vLines.push({ x: cut / f, color: COLORS.cut, dash: [6, 4], label: fSym() + '−3dB' });
-    if (showTest) vLines.push({ x: test, color: COLORS.test, label: fSym() + '₀ (generator)', bottom: true });
+    if (showTest) {
+      vLines.push({ x: test, color: COLORS.test, label: fSym() + '₀ cursor', bottom: true });
+      const y = interp(xs, db, test);
+      if (Number.isFinite(y)) magPts.push({ x: test, y, color: COLORS.test });
+      phPts.push({ x: test, y: interp(xs, ph, test), color: COLORS.test });
+    }
+    if (state.gen.type === 'dual' && test / 10 >= lo && test / 10 <= hi) vLines.push({ x: test / 10, color: COLORS.test, dash: [2, 4], label: '0.1' + fSym() + '₀ (ECG)', bottom: true, row: 1 });
     const label = `${fSym()} (${fUnit()})`;
     magPlot.o.xLabel = phasePlot.o.xLabel = label;
     magPlot.o.yLabel = normed ? `|H/${current.refName}|  (dB)` : '|H|  (dB)';
@@ -253,9 +271,116 @@
     magPlot.set({
       x: [lo, hi], y: [ymin, ymax], yStep: ys, series: [{ x: xs, y: db, color: COLORS.in }], vLines,
       hLines: ref ? [{ y: lvl, color: COLORS.cut, dash: [6, 4], label: normed ? '−3 dB' : `${current.refName} − 3 dB = ${num(lvl, 3)} dB` }] : [],
-      points: cut ? [{ x: cut / f, y: lvl, color: COLORS.cut }] : [],
+      points: (cut ? [{ x: cut / f, y: lvl, color: COLORS.cut }] : []).concat(magPts),
     });
-    phasePlot.set({ x: [lo, hi], y: [pmin, pmax], yStep: pmax - pmin > 360 ? 90 : 45, series: [{ x: xs, y: ph, color: COLORS.in }], vLines });
+    phasePlot.set({ x: [lo, hi], y: [pmin, pmax], yStep: pmax - pmin > 360 ? 90 : 45, series: [{ x: xs, y: ph, color: COLORS.in }], vLines, points: phPts });
+    syncCursor();
+  }
+
+  // ---------- ω₀ cursor: impedance readout and phasor diagram ----------
+  const PH = { vin: COLORS.in, vout: COLORS.out, vl: '#2563eb', i: COLORS.test, vz1: '#8a94a6' };
+  const cplx = z => !(Number.isFinite(z.re) && Number.isFinite(z.im)) ? '∞' : `${num(z.re)} ${z.im < 0 ? '−' : '+'} j${num(Math.abs(z.im))}`;
+  const polar = (z, unit) => !(Number.isFinite(z.re) && Number.isFinite(z.im)) ? '' : `${eng(Math.hypot(z.re, z.im), unit, 4)} ∠ ${num(Math.atan2(z.im, z.re) * 180 / Math.PI)}°`;
+  function syncCursor() {
+    const x = state.gen.w / factor();
+    $('c-label').textContent = fSym() + '₀';
+    $('c-unit').textContent = fUnit();
+    if (!(x > 0)) return;
+    if (document.activeElement !== $('c')) $('c').value = Number(x.toPrecision(6));
+    if (current?.range && document.activeElement !== $('c-slider')) {
+      const [lo, hi] = current.range;
+      $('c-slider').value = Math.round(1000 * Math.log(x / lo) / Math.log(hi / lo));
+    }
+  }
+  function drawCursor() {
+    const w0 = state.gen.w, nm = names(), [b1, b2] = state.branches;
+    const list = b => b.items.map(it => ({ type: it.type, value: +it.val * it.mult }));
+    const serial = b => b.mode !== 'parallel' || b.items.length === 1;
+    const Z1 = Engine.branchAt(list(b1), b1.mode, w0), Z2 = Engine.branchAt(list(b2), b2.mode, w0);
+    const Zin = Engine.cadd(Z1, Z2), r = Engine.response(current.m, w0);
+    // Phasors for V_in = 1∠0° V; the same current I₁ flows through Z₁ and Z₂
+    const I1 = Engine.cdiv({ re: 1, im: 0 }, Zin), Vout = Engine.cmul(I1, Z2), VZ1 = Engine.cmul(I1, Z1);
+    let VL = null, lName = '';
+    [b1, b2].some((b, bi) => {
+      const i = b.items.findIndex(it => it.type === 'L');
+      if (i < 0) return false;
+      lName = nm[bi][i];
+      VL = serial(b) ? Engine.cmul(I1, { re: 0, im: w0 * list(b)[i].value }) : bi === 0 ? VZ1 : Vout;
+      return true;
+    });
+
+    // Z_match: what the source resistance R_S sees looking into the rest of the network
+    let match = '';
+    if (serial(b1) && b1.items.some(it => it.type !== 'R')) {
+      const rs = b1.items.map((it, i) => ({ it, i, v: +it.val * it.mult })).filter(x => x.it.type === 'R');
+      const Rs = rs.reduce((s, x) => s + x.v, 0), Zm = { re: Z1.re - Rs + Z2.re, im: Z1.im + Z2.im };
+      const reac = b1.items.map((it, i) => [it, nm[0][i]]).filter(([it]) => it.type !== 'R');
+      const lhs = reac.length === 1 && reac[0][0].type === 'L' ? `jω₀${reac[0][1]} + Z₂` : (Rs ? 'Z₁ − R_S + Z₂' : 'Z₁ + Z₂');
+      const rsName = rs.length === 1 ? nm[0][rs[0].i] : 'R_S';
+      let check = '';
+      if (Rs > 0) {
+        const dev = Math.hypot(Zm.re - Rs, Zm.im) / Rs;
+        check = dev < 0.01
+          ? `<div class="ro-check ok">✓ Matched: Re = ${rsName} = ${eng(Rs, 'Ω', 4)} and Im ≈ 0 (within ${num(dev * 100, 2)}%)</div>`
+          : `<div class="ro-check">Target Re = ${rsName} = ${eng(Rs, 'Ω', 4)}, Im = 0 Ω. Now ΔRe = ${num(Zm.re - Rs)} Ω, Im = ${num(Zm.im)} Ω</div>`;
+      }
+      match = `<div class="ro"><b>Z<sub>match</sub>(jω₀) = ${lhs}</b><span>${cplx(Zm)} Ω</span><small>${polar(Zm, 'Ω')}</small>${check}</div>`;
+    } else match = `<div class="ro muted"><b>Z<sub>match</sub>(jω₀)</b><small>Wire Z₁ as R_S in series with L (Part B) to see the impedance R_S looks into.</small></div>`;
+
+    const db = 20 * Math.log10(r.mag);
+    $('readout').innerHTML =
+      `<div class="ro"><b>${fSym()}₀</b><span>${eng(w0, 'rad/s', 5)}</span><small>${eng(w0 / TWO_PI, 'Hz', 5)}</small></div>` +
+      `<div class="ro"><b>Z₁(jω₀)</b><span>${cplx(Z1)} Ω</span><small>${polar(Z1, 'Ω')}</small></div>` +
+      `<div class="ro"><b>Z₂(jω₀) = R<sub>eq</sub> + jX<sub>eq</sub></b><span>${cplx(Z2)} Ω</span><small>${polar(Z2, 'Ω')}</small></div>` +
+      match +
+      `<div class="ro"><b>|H(jω₀)|</b><span>${num(r.mag)} V/V</span><small>${Number.isFinite(db) ? num(db, 4) + ' dB' : '−∞ dB'}</small></div>` +
+      `<div class="ro"><b>∠H(jω₀)</b><span>${num(Math.abs(r.phase) < 1e-9 ? 0 : r.phase)}°</span><small>V<sub>out</sub> ${r.phase < -1e-9 ? 'lags' : r.phase > 1e-9 ? 'leads' : 'in phase with'} V<sub>in</sub></small></div>`;
+
+    const vecs = [
+      { z: VZ1, from: Vout, color: PH.vz1, label: 'V_Z1', key: `V<sub>Z₁</sub> = I₁Z₁ (closes V<sub>in</sub> = V<sub>Z₁</sub> + V<sub>out</sub>)`, dash: true },
+      { z: { re: 1, im: 0 }, color: PH.vin, label: 'V_in', key: 'V<sub>in</sub> (reference)' },
+      { z: Vout, color: PH.vout, label: 'V_out', key: 'V<sub>out</sub> = H·V<sub>in</sub>' },
+      ...(VL ? [{ z: VL, color: PH.vl, label: 'V_L', key: `V<sub>L</sub> across ${lName}` }] : []),
+      { z: I1, color: PH.i, label: 'I_1', key: 'I₁ = V<sub>in</sub>/(Z₁ + Z₂), drawn to its own scale', current: true },
+    ];
+    $('phasor-key').innerHTML = vecs.map(v => `<div><span class="sw" style="background:${v.color}"></span>${v.key}: <b>${polar(v.z, v.current ? 'A' : 'V') || '∞'}</b></div>`).join('') +
+      (VL ? '' : '<div class="muted">No inductor in the circuit, so there is no V<sub>L</sub>.</div>');
+    drawPhasor(vecs);
+  }
+  function drawPhasor(vecs) {
+    const W = 420, H = 330, cx = 210, cy = 160, R = 128;
+    const ok = z => Number.isFinite(z.re) && Number.isFinite(z.im);
+    const tip = v => v.from ? Engine.cadd(v.from, v.z) : v.z;
+    const vmax = Math.max(1, ...vecs.filter(v => !v.current && ok(v.z)).map(v => Math.max(Math.hypot(tip(v).re, tip(v).im), v.from ? Math.hypot(v.from.re, v.from.im) : 0)));
+    const sc = R / vmax, px = z => [cx + z.re * sc, cy - z.im * sc];
+    const sub = s => { const [a, b] = s.split('_'); return `${a}<tspan dy="4" font-size="11">${b}</tspan>`; };
+    let s = `<rect width="${W}" height="${H}" fill="#fff"/>` +
+      `<line x1="16" y1="${cy}" x2="${W - 16}" y2="${cy}" stroke="#b9c1cd"/><line x1="${cx}" y1="14" x2="${cx}" y2="${H - 24}" stroke="#b9c1cd"/>` +
+      `<text x="${W - 14}" y="${cy - 6}" text-anchor="end" font-size="12" fill="#5b6578">Re</text><text x="${cx + 6}" y="24" font-size="12" fill="#5b6578">Im</text>` +
+      `<circle cx="${cx}" cy="${cy}" r="${sc}" fill="none" stroke="#c8d0db" stroke-dasharray="4 4"/>` +
+      `<text x="${cx - sc * 0.71 - 4}" y="${cy - sc * 0.71 - 4}" text-anchor="end" font-size="11" fill="#8a94a6">|V<tspan dy="3" font-size="9">in</tspan><tspan dy="-3">| = 1 V</tspan></text>`;
+    for (const v of vecs) {
+      if (!ok(v.z)) continue;
+      let z = v.z;
+      if (v.current) { // amps cannot share the volts scale: show direction at 55% of the plot radius
+        const m = Math.hypot(z.re, z.im);
+        if (!m) continue;
+        z = { re: z.re / m * 0.55 * vmax, im: z.im / m * 0.55 * vmax };
+      }
+      const [x1, y1] = px(v.from || { re: 0, im: 0 }), [x2, y2] = px(v.from ? Engine.cadd(v.from, z) : z);
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 2) { s += `<circle cx="${x1}" cy="${y1}" r="3" fill="${v.color}"/>`; continue; }
+      const ux = (x2 - x1) / len, uy = (y2 - y1) / len, h = Math.min(11, len * 0.45), bx = x2 - ux * h, by = y2 - uy * h;
+      s += `<line x1="${x1}" y1="${y1}" x2="${bx}" y2="${by}" stroke="${v.color}" stroke-width="${v.dash ? 1.8 : 2.6}"${v.dash ? ' stroke-dasharray="5 4"' : ''}/>` +
+        `<path d="M${x2} ${y2}L${bx - uy * h * 0.45} ${by + ux * h * 0.45}L${bx + uy * h * 0.45} ${by - ux * h * 0.45}Z" fill="${v.color}"/>`;
+      // Dashed V_Z₁ and the current are labelled beside their midpoint/tip so they do not sit on V_in
+      const side = v.dash || v.current, ax = side ? -uy : ux;
+      const lx = v.dash ? (x1 + x2) / 2 - uy * 12 : v.current ? x2 - ux * h - uy * 14 : x2 + ux * 12;
+      const ly = v.dash ? (y1 + y2) / 2 + ux * 12 : v.current ? y2 - uy * h + ux * 14 : y2 + uy * 12;
+      s += `<text x="${lx}" y="${ly + 4}" text-anchor="${ax < -0.3 ? 'end' : ax > 0.3 ? 'start' : 'middle'}" font-size="14" font-style="italic" font-weight="600" fill="${v.color}" stroke="#fff" stroke-width="3" paint-order="stroke">${sub(v.label)}</text>`;
+    }
+    s += `<text x="12" y="20" font-size="11" fill="#8a94a6">${fSym()}₀ = ${eng(state.gen.w / factor(), fUnit(), 4)} · equal scales</text>` + Watermark.svg(W - 6, H - 6);
+    $('phasor').innerHTML = s;
   }
 
   // ---------- signal generator ----------
@@ -266,6 +391,7 @@
   }
   function autoWindow() {
     const tau = slowestTau(), type = state.gen.type;
+    if (type === 'dual') return niceUp(2 * TWO_PI / (0.1 * state.gen.w)); // two ECG periods, twenty hum periods
     if (type === 'step' || type === 'impulse') {
       if (tau) return niceUp(6 * tau);
       const osc = current.poles.find(p => p.im > 0);
@@ -275,9 +401,11 @@
     return niceUp(tau ? Math.min(Math.max(6 * tau, 4 * P), 12 * P) : 6 * P);
   }
   function syncGenerator() {
-    const g = state.gen, needsF = ['sine', 'cosine', 'square'].includes(g.type);
+    const g = state.gen, needsF = ['sine', 'cosine', 'square', 'dual'].includes(g.type);
     document.querySelectorAll('#sb-type button').forEach(b => b.classList.toggle('on', b.dataset.type === g.type));
     document.querySelectorAll('.needs-freq').forEach(el => el.classList.toggle('off', !needsF));
+    document.querySelectorAll('.needs-cut').forEach(el => el.classList.toggle('off', !needsF || g.type === 'dual'));
+    document.querySelectorAll('.needs-amp').forEach(el => el.classList.toggle('off', g.type === 'dual'));
     $('amp-label').textContent = g.type === 'impulse' ? 'Area A' : 'Amplitude A';
     $('amp-unit').textContent = g.type === 'impulse' ? 'V·s' : 'V';
     $('f-label').textContent = 'Frequency ' + fSym() + '₀';
@@ -286,8 +414,7 @@
     if (document.activeElement !== $('f') && g.w) $('f').value = Number((g.w / factor()).toPrecision(6));
     $('x10').checked = !!state.x10;
     $('out-label').innerHTML = state.x10 ? 'Output ×10 &nbsp;(10·v<sub>out</sub>)' : 'Output v<sub>out</sub>(t)';
-    document.querySelectorAll('#sb-norm button').forEach(b => b.addEventListener('click', () => { state.norm = b.dataset.norm === '1'; update(); }));
-  document.querySelectorAll('#sb-unit button').forEach(b => b.classList.toggle('on', b.dataset.unit === state.unit));
+    document.querySelectorAll('#sb-unit button').forEach(b => b.classList.toggle('on', b.dataset.unit === state.unit));
     $('auto').classList.toggle('on', g.auto);
   }
   function setWindowField(win) {
@@ -296,7 +423,49 @@
     $('win').value = Number((win / unit).toPrecision(4));
   }
 
+  // v_in = 1.0 cos(0.1ω₀t) + 5.0 sin(ω₀t + 30°), as cosines: 5 sin(x + 30°) = 5 cos(x − 60°)
+  const DUAL = w0 => [{ amp: 1, w: 0.1 * w0, phase: 0 }, { amp: 5, w: w0, phase: -60 }];
+  function drawDual() {
+    const g = state.gen, w0 = g.w;
+    if (!(w0 > 0)) throw Error('Enter a positive frequency.');
+    let win = g.win;
+    if (g.auto || !(win > 0)) { win = autoWindow(); g.win = win; setWindowField(win); }
+    const sim = Engine.tones(current.m, DUAL(w0), win);
+    const scale = win < 1e-3 ? 1e6 : win < 1 ? 1e3 : 1, tu = scale === 1e6 ? 'µs' : scale === 1e3 ? 'ms' : 's';
+    const k = state.x10 ? 10 : 1;
+    const t = sim.t.map(v => v * scale), yOut = sim.y.map(v => v * k);
+    const vals = sim.u.concat(yOut, [0]);
+    const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo || 1) * 0.12;
+    timePlot.o.xLabel = `t (${tu})`;
+    timePlot.o.hover = x => [
+      `t = ${eng(x / scale, 's', 4)}`,
+      { text: `v_in = ${num(interp(t, sim.u, x))} V`, color: COLORS.in },
+      { text: `${state.x10 ? '10·v_out' : 'v_out'} = ${num(interp(t, yOut, x))} V`, color: COLORS.out },
+    ];
+    timePlot.set({ x: [0, t[t.length - 1]], y: [lo - pad, hi + pad], series: [{ x: t, y: sim.u, color: COLORS.in, width: 1.6 }, { x: t, y: yOut, color: COLORS.out, width: 2.4 }] });
+
+    const [ecg, hum] = sim.parts;
+    const arg = w => state.unit === 'hz' ? `2\\pi\\cdot ${texNum(w / TWO_PI)}\\,t` : `${texNum(w)}\\,t`;
+    const shift = deg => Math.abs(deg) < 1e-9 ? '' : `${deg < 0 ? '-' : '+'}{${texNum(Math.abs(deg))}}^\\circ`;
+    katex.render(`\\begin{aligned}v_{\\text{in}}(t)&=1.0\\cos(${arg(ecg.w)})+5.0\\sin(${arg(w0)}+30^\\circ)\\ \\text{V}\\\\` +
+      `v_{\\text{out}}(t)&=${texNum(ecg.outAmp)}\\cos(${arg(ecg.w)}${shift(ecg.dphase)})+${texNum(hum.outAmp)}\\sin(${arg(w0)}${shift(30 + hum.dphase)})\\ \\text{V}\\end{aligned}`,
+    $('input-eq'), { displayMode: true, throwOnError: false });
+
+    const stat = (l, v, c = '') => `<div class="stat ${c}"><b>${l}</b><span>${v}</span></div>`;
+    const dB = v => v > 0 ? num(20 * Math.log10(v), 3) + ' dB' : '−∞ dB';
+    const fs = fSym();
+    $('time-stats').innerHTML =
+      stat(`ECG tone: |H(j0.1${fs}₀)|`, `${num(ecg.mag)} V/V (${dB(ecg.mag)})`) +
+      stat(`Hum: |H(j${fs}₀)|`, `${num(hum.mag)} V/V (${dB(hum.mag)})`) +
+      stat('ECG amplitude out', `${num(ecg.outAmp)} V`) +
+      stat('Hum amplitude out', `${num(hum.outAmp)} V`, hum.outAmp < 0.01 * ecg.outAmp ? 'note' : '') +
+      stat('Hum relative to ECG', `in ${dB(5)} → out ${hum.outAmp && ecg.outAmp ? dB(hum.outAmp / ecg.outAmp) : '−∞ dB'}`) +
+      stat('Shown', 'AC steady state by superposition (no switch-on transient)') +
+      (state.x10 ? stat('Display', 'output trace shown ×10') : '');
+  }
+
   function drawTime() {
+    if (state.gen.type === 'dual') return drawDual();
     const g = state.gen, m = current.m, f = factor();
     const needsF = ['sine', 'cosine', 'square'].includes(g.type);
     if (!(Number.isFinite(g.amp) && g.amp !== 0)) throw Error('Enter a non-zero amplitude.');
@@ -417,10 +586,12 @@
         (cancel ? stat('Pole–zero cancellation', 'Flat, distortion-free response', 'note') : '');
       $('at-cut').disabled = $('at-10').disabled = !cut;
       drawBode();
+      drawCursor();
     } catch (e) {
       current = null;
       status.className = 'status error'; status.textContent = e.message;
       $('eq').textContent = ''; $('stats').innerHTML = ''; $('time-stats').innerHTML = ''; $('input-eq').textContent = '';
+      $('readout').innerHTML = '<div class="empty">Complete the circuit to see impedances at ω₀.</div>'; $('phasor-key').innerHTML = ''; $('phasor').innerHTML = '';
       magPlot.clear('Complete the circuit to see the Bode plot'); phasePlot.clear('');
       timePlot.clear('Complete the circuit to see the response');
       return;
@@ -456,6 +627,23 @@
   $('win-unit').addEventListener('change', readWindow);
   $('auto').addEventListener('click', () => { state.gen.auto = true; update(); });
   $('x10').addEventListener('change', () => { state.x10 = $('x10').checked; update(); });
+  // ω₀ cursor: typed value or log-scale slider over the Bode range (one update per frame)
+  let cursorFrame = 0;
+  const setCursor = w => {
+    state.gen.w = w; state.gen.auto = true;
+    if (!cursorFrame) cursorFrame = requestAnimationFrame(() => { cursorFrame = 0; update(); });
+  };
+  $('c').addEventListener('input', () => {
+    const v = +$('c').value, ok = $('c').value !== '' && v > 0 && Number.isFinite(v);
+    $('c').classList.toggle('bad', !ok);
+    if (ok) setCursor(v * factor());
+  });
+  $('c-slider').addEventListener('input', () => {
+    if (!current?.range) return;
+    const [lo, hi] = current.range;
+    setCursor(Number((lo * (hi / lo) ** ($('c-slider').value / 1000)).toPrecision(4)) * factor());
+  });
+  Watermark.onChange(() => { if (current) drawCursor(); });
   $('at-cut').addEventListener('click', () => { if (current?.cut) { state.gen.w = current.cut; state.gen.auto = true; update(); } });
   $('at-10').addEventListener('click', () => { if (current?.cut) { state.gen.w = 10 * current.cut; state.gen.auto = true; update(); } });
   document.querySelectorAll('#sb-norm button').forEach(b => b.addEventListener('click', () => { state.norm = b.dataset.norm === '1'; update(); }));
