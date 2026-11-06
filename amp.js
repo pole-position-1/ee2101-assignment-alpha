@@ -1,7 +1,8 @@
 'use strict';
 /*
- * Amplifier compensation: a fixed two-node amplifier (R1, C1 at V1; gm·V1, R2, C2
- * at V2) with an optional Cc + Rz branch from V1 to V2. The plots show the
+ * Amplifier compensation: a two-node amplifier (R1, C1 at V1; gm·V1, R2, C2 at V2,
+ * with gm and R2 set by the student) and an optional Cc + Rz branch from V1 to V2.
+ * The plots show the
  * open-loop gain A(s) = −V2/Vs from Engine.ampLoop, which documents the
  * test convention. Target: phase −135° or higher wherever |A| = 1.
  */
@@ -10,10 +11,17 @@
   const { eng, num } = Plot;
   const TWO_PI = 2 * Math.PI, TARGET = -135, STORE = 'ee2101-alpha-amp-v1';
   const COL = { curve: '#0f766e', unity: '#7c3aed', target: '#c2410c', ref: '#6b7486', comp: '#c2410c', off: '#b9c1cd', ink: '#1f2a3d', pole: '#dc2626', zero: '#059669' };
-  const FIXED = { R2: 100e3, C1: 100e-12, C2: 10e-12 };
-  const COMP = { on: false, Cc: '10', Rz: '0', RzUnit: '1' };
-  const state = { X: 0, Y: 1, ...COMP, trials: [] };
-  try { Object.assign(state, JSON.parse(localStorage.getItem(STORE)) || {}); } catch (e) { /* storage unavailable */ }
+  const FIXED = { C1: 100e-12, C2: 10e-12 };
+  const COMP = { gm: '1', R2: '100', on: false, Cc: '10', Rz: '0', RzUnit: '1' };
+  const state = { X: 0, ...COMP, trials: [] };
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE)) || {};
+    // saved before g_m and R2 became editable: g_m was Y mS, R2 was 100 kΩ
+    if (saved.Y && !saved.gm) saved.gm = String(saved.Y);
+    delete saved.Y;
+    (saved.trials || []).forEach(t => { t.xy = t.xy.replace(/^(\d), (\d)$/, '$1, $2 mS, 100 kΩ'); });
+    Object.assign(state, saved);
+  } catch (e) { /* storage unavailable */ }
   const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } };
 
   const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
@@ -30,18 +38,19 @@
 
   // ---------- inputs ----------
   for (let i = 0; i <= 9; i++) $('x').add(new Option(i, i));
-  for (let i = 1; i <= 9; i++) $('y').add(new Option(i, i));
+  // Leave the box being typed in alone: rewriting it would eat a trailing "0." or "1e"
+  const put = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
   function syncInputs() {
-    $('x').value = state.X; $('y').value = state.Y;
-    $('cc').value = state.Cc; $('rz').value = state.Rz; $('rz-unit').value = state.RzUnit;
+    $('x').value = state.X; $('rz-unit').value = state.RzUnit;
+    put('gm', state.gm); put('r2', state.R2); put('cc', state.Cc); put('rz', state.Rz);
     document.querySelectorAll('#am-on button').forEach(b => b.classList.toggle('on', (b.dataset.on === '1') === state.on));
   }
   function params() {
-    const Cc = parseFloat(state.Cc), Rz = parseFloat(state.Rz) * +state.RzUnit;
-    const ok = { cc: !state.on || (state.Cc !== '' && Cc >= 0), rz: !state.on || (state.Rz !== '' && Rz >= 0) };
-    $('cc').classList.toggle('bad', !ok.cc); $('rz').classList.toggle('bad', !ok.rz);
-    if (!ok.cc || !ok.rz) return null;
-    return { ...uncompensated(), Cc: state.on ? Cc * 1e-12 : 0, Rz: state.on ? Rz : 0 };
+    const Cc = parseFloat(state.Cc), Rz = parseFloat(state.Rz) * +state.RzUnit, base = uncompensated();
+    const ok = { gm: parseFloat(state.gm) > 0, r2: parseFloat(state.R2) > 0, cc: !state.on || (state.Cc !== '' && Cc >= 0), rz: !state.on || (state.Rz !== '' && Rz >= 0) };
+    Object.keys(ok).forEach(k => $(k).classList.toggle('bad', !ok[k]));
+    if (!base || !ok.cc || !ok.rz) return null;
+    return { ...base, Cc: state.on ? Cc * 1e-12 : 0, Rz: state.on ? Rz : 0 };
   }
 
   // ---------- analysis ----------
@@ -62,12 +71,17 @@
   const phasePlot = new Plot($('phase'), { ...opts, yLabel: '∠A(j2πf)  (°)' });
   let cur = null;
 
-  // The unity-gain buffer section above reads this design and follows its edits.
+  // The Op-Amp Buffer tab reads this design and follows its edits.
   const listeners = [];
-  const uncompensated = () => ({ R1: (10 + +state.X) * 1e3, gm: +state.Y * 1e-3, ...FIXED });
+  // null until g_m and R2 are both positive numbers
+  function uncompensated() {
+    const gm = parseFloat(state.gm) * 1e-3, R2 = parseFloat(state.R2) * 1e3;
+    return gm > 0 && R2 > 0 ? { R1: (10 + +state.X) * 1e3, gm, R2, ...FIXED } : null;
+  }
+  const designText = () => `X = ${state.X}, g<sub>m</sub> = ${state.gm} mS, R<sub>2</sub> = ${state.R2} kΩ`;
   window.AmpDesign = {
     params: () => cur && cur.p, uncompensated, onChange: fn => listeners.push(fn),
-    describe: live => `X = ${state.X}, Y = ${state.Y}` + (live && cur && cur.p.Cc ? `, C<sub>c</sub> = ${num(cur.p.Cc * 1e12, 4)} pF, R<sub>z</sub> = ${eng(cur.p.Rz, 'Ω', 4)}` : live ? ', C<sub>c</sub> off' : ''),
+    describe: live => designText() + (live && cur && cur.p.Cc ? `, C<sub>c</sub> = ${num(cur.p.Cc * 1e12, 4)} pF, R<sub>z</sub> = ${eng(cur.p.Rz, 'Ω', 4)}` : live ? ', C<sub>c</sub> off' : ''),
   };
   function render() { draw(); listeners.forEach(fn => fn()); }
 
@@ -80,7 +94,7 @@
     schematic(p);
     if (!p) {
       cur = null;
-      $('readout').innerHTML = '<div class="stat warn"><span>Enter C<sub>c</sub> and R<sub>z</sub> as numbers ≥ 0.</span></div>';
+      $('readout').innerHTML = '<div class="stat warn"><span>Enter g<sub>m</sub> and R<sub>2</sub> as numbers &gt; 0, and C<sub>c</sub> and R<sub>z</sub> as numbers ≥ 0.</span></div>';
       $('roots').innerHTML = '';
       magPlot.clear('Enter valid values'); phasePlot.clear('Enter valid values');
       return;
@@ -95,7 +109,7 @@
 
   function fixedValues(p, a) {
     const stat = (label, value) => `<div class="stat"><b>${label}</b><span>${value}</span></div>`;
-    $('fixed').innerHTML = stat('R<sub>1</sub> = (10 + X) kΩ', eng(p.R1, 'Ω', 4)) + stat('g<sub>m</sub> = Y mS', eng(p.gm, 'S', 4)) +
+    $('fixed').innerHTML = stat('R<sub>1</sub> = (10 + X) kΩ', eng(p.R1, 'Ω', 4)) + stat('g<sub>m</sub>', eng(p.gm, 'S', 4)) +
       stat('R<sub>2</sub>', eng(p.R2, 'Ω', 4)) + stat('C<sub>1</sub>', eng(p.C1, 'F', 4)) + stat('C<sub>2</sub>', eng(p.C2, 'F', 4)) +
       stat('Low-frequency gain', `${num(a.k0, 4)} V/V (${num(20 * Math.log10(a.k0), 4)} dB)`);
   }
@@ -157,7 +171,9 @@
     // name above value, for the vertical parts
     const stack = (sym, sub, val, x, y, anchor = 'start') => lab(sym, sub, '', x, y, COL.ink, anchor) +
       `<text x="${x}" y="${y + 23}" text-anchor="${anchor}" fill="#5b6578" font-size="17">${val}</text>`;
-    const R1 = p ? p.R1 : (10 + +state.X) * 1e3, gm = +state.Y * 1e-3;
+    const R1 = (10 + +state.X) * 1e3;
+    const gmText = parseFloat(state.gm) > 0 ? eng(parseFloat(state.gm) * 1e-3, 'S', 4) : '?';
+    const r2Text = parseFloat(state.R2) > 0 ? eng(parseFloat(state.R2) * 1e3, 'Ω', 4) : '?';
     const ccText = on ? (state.Cc === '' ? '?' : num(+state.Cc, 4) + ' pF') : '';
     const rzVal = parseFloat(state.Rz) * +state.RzUnit, rzText = on ? (Number.isFinite(rzVal) ? eng(rzVal, 'Ω', 4) : '?') : '';
     $('schem').innerHTML = `
@@ -182,8 +198,8 @@
         ${lab('V', '2', '', 502, 150)}
         ${stack('C', '1', '100 pF', 256, 200)}
         <text x="462" y="200" text-anchor="end" fill="${COL.ink}"><tspan font-style="italic">g</tspan><tspan font-size="14" dy="5">m</tspan><tspan dy="-5" font-style="italic">V</tspan><tspan font-size="14" dy="5">1</tspan></text>
-        <text x="462" y="223" text-anchor="end" fill="#5b6578" font-size="17">${eng(gm, 'S', 4)}</text>
-        ${stack('R', '2', '100 kΩ', 618, 200)}
+        <text x="462" y="223" text-anchor="end" fill="#5b6578" font-size="17">${gmText}</text>
+        ${stack('R', '2', r2Text, 618, 200)}
         ${stack('C', '2', '10 pF', 736, 200)}
         <g font-size="18">${lab('C', 'c', ccText, 311, 42, cc, 'middle')}${lab('R', 'z', rzText, 415, 42, cc, 'middle')}</g>
         <text x="266" y="98" text-anchor="middle" font-size="14" fill="${cc}">${on ? 'on' : 'off'}</text>
@@ -201,7 +217,7 @@
     if (!cur) return;
     const { p, a } = cur, none = !a.cross.length;
     state.trials.push({
-      xy: `${state.X}, ${state.Y}`, cc: p.Cc ? num(p.Cc * 1e12, 4) + ' pF' : 'off', rz: p.Cc ? eng(p.Rz, 'Ω', 4) : '—',
+      xy: `${state.X}, ${eng(p.gm, 'S', 4)}, ${eng(p.R2, 'Ω', 4)}`, cc: p.Cc ? num(p.Cc * 1e12, 4) + ' pF' : 'off', rz: p.Cc ? eng(p.Rz, 'Ω', 4) : '—',
       f: none ? 'none' : a.cross.map(c => hz(c.f)).join(', '), ph: none ? '—' : a.cross.map(c => deg(c.ph)).join(', '),
       status: none ? 'No unity-gain crossing' : a.meets ? 'Meets target' : 'Below target', ok: a.meets, none,
     });
@@ -212,7 +228,8 @@
   // ---------- events ----------
   const set = (k, v) => { state[k] = v; save(); render(); };
   $('x').addEventListener('change', () => set('X', +$('x').value));
-  $('y').addEventListener('change', () => set('Y', +$('y').value));
+  $('gm').addEventListener('input', () => set('gm', $('gm').value));
+  $('r2').addEventListener('input', () => set('R2', $('r2').value));
   $('cc').addEventListener('input', () => set('Cc', $('cc').value));
   $('rz').addEventListener('input', () => set('Rz', $('rz').value));
   $('rz-unit').addEventListener('change', () => set('RzUnit', $('rz-unit').value));

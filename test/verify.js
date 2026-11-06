@@ -369,7 +369,7 @@ function maxErr(sim, f, from = 0) {
   close('amp 20p: phase target met', unity(E.ampLoop({ ...base, Cc: 20e-12 }))[0].ph >= -135, 1, 0);
   close('amp 10p: phase target missed', unity(p10)[0].ph >= -135, 0, 0);
   // the closed form against direct two-node nodal analysis at complex s
-  for (const p of [{ ...base, Cc: 10e-12, Rz: 2e3 }, { R1: 19e3, gm: 9e-3, R2: 100e3, C1: 100e-12, C2: 10e-12, Cc: 3.3e-12, Rz: 470 }]) {
+  for (const p of [{ ...base, Cc: 10e-12, Rz: 2e3 }, { R1: 19e3, gm: 9e-3, R2: 100e3, C1: 100e-12, C2: 10e-12, Cc: 3.3e-12, Rz: 470 }, { R1: 12e3, gm: 2.5e-3, R2: 47e3, C1: 100e-12, C2: 10e-12, Cc: 15e-12, Rz: 300 }]) {
     for (const w of [1e3, 3e5, 2e7, 1e9]) {
       const s = { re: 0.3 * w, im: w }, G1 = 1 / p.R1, G2 = 1 / p.R2;
       const Yc = E.cdiv({ re: s.re * p.Cc, im: s.im * p.Cc }, { re: 1 + s.re * p.Rz * p.Cc, im: s.im * p.Rz * p.Cc }); // sCc/(1 + sRzCc)

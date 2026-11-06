@@ -4,8 +4,8 @@
  * V− = Vout), so Vout = A(V+ − V−) and H_CL = A/(1 + A). Where |A| = 1 the
  * denominator is 1 + 1∠φu, which is zero at φu = −180°. A comes from a three-pole
  * model with a chosen phase at unity gain (Engine.bufferModel), the uncompensated
- * amplifier for the X, Y set below, or the live design from the compensation
- * section (window.AmpDesign).
+ * amplifier or the live design from the Amplifier Compensation tab
+ * (window.AmpDesign).
  */
 (function () {
   const $ = id => document.getElementById('bf-' + id);
@@ -82,7 +82,7 @@
     const A = openLoop(), a = A && analyse(A);
     cur = a;
     if (!a) {
-      const msg = !A ? 'Enter a valid Cc and Rz in Amplifier Compensation below.' : 'The gain never reaches 1, so there is no unity-gain frequency.';
+      const msg = !A ? 'Enter valid values in the Amplifier Compensation tab.' : 'The gain never reaches 1, so there is no unity-gain frequency.';
       $('readout').innerHTML = `<div class="ro"><b>No unity-gain crossing</b><span>—</span><small>${msg}</small></div>`;
       $('step-stats').innerHTML = ''; $('poles').textContent = ''; $('mag-note').textContent = '';
       $('phasor').innerHTML = Watermark.svg(474, 244); $('splane').innerHTML = Watermark.svg(474, 264);
@@ -110,7 +110,7 @@
     let src = `Three-pole model: K₀ = ${K0}, |A| = 1 at fᵤ = ${hz(FU)}`;
     if (state.mode !== 'model' && window.AmpDesign) {
       const d = AmpDesign.describe(live);
-      src = live ? `Live design from below: ${d}. Edits below update this buffer.` : `Uncompensated amplifier with ${d} from below (C<sub>c</sub> off).`;
+      src = live ? `Live design: ${d}. Edits in the Amplifier Compensation tab update this buffer.` : `Uncompensated amplifier from the Amplifier Compensation tab: ${d} (C<sub>c</sub> off).`;
     }
     $('source').innerHTML = src;
   }

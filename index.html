@@ -6,15 +6,15 @@
 <title>EE2101 Assignment Alpha · Interactive Tool</title>
 <meta name="description" content="Pole-zero to Bode plot explorer and voltage-divider circuit sandbox with a signal generator, for EE2101 Assignment Alpha.">
 <link rel="stylesheet" href="vendor/katex.min.css">
-<link rel="stylesheet" href="styles.css?v=14">
+<link rel="stylesheet" href="styles.css?v=15">
 <script defer src="vendor/katex.min.js"></script>
 <script defer src="engine.js?v=8"></script>
 <script defer src="student.js?v=1"></script>
 <script defer src="plot.js?v=3"></script>
 <script defer src="polezero.js?v=9"></script>
 <script defer src="sandbox.js?v=7"></script>
-<script defer src="amp.js?v=5"></script>
-<script defer src="buffer.js?v=5"></script>
+<script defer src="amp.js?v=6"></script>
+<script defer src="buffer.js?v=6"></script>
 <script defer src="bullseye.js?v=2"></script>
 <script defer src="smith.js?v=2"></script>
 </head>
@@ -26,7 +26,8 @@
     <a href="#sandbox" data-tab="sandbox"><span class="num">2</span> Circuit Sandbox</a>
     <a href="#bullseye" data-tab="bullseye"><span class="num">3</span> 2D Impedance Plane</a>
     <a href="#smith" data-tab="smith"><span class="num">4</span> Smith Chart L-Match</a>
-    <a href="#amp" data-tab="amp"><span class="num">5</span> Amplifier Compensation</a>
+    <a href="#opamp" data-tab="opamp"><span class="num">5</span> Op-Amp Buffer</a>
+    <a href="#amp" data-tab="amp"><span class="num">6</span> Amplifier Compensation</a>
   </nav>
   <div class="student" role="group" aria-label="Student identity">
     <label><span>Student Name</span><input id="st-name" type="text" required autocomplete="name" placeholder="Full name" maxlength="60"></label>
@@ -274,17 +275,15 @@
     </div>
   </div>
 </section>
-<!-- ============ Section 5: unity-gain buffer + amplifier compensation ============ -->
-<section id="amp" class="page" hidden>
-  <!-- unity-gain buffer: why −180° at gain = 1 oscillates (reads the design below) -->
-  <div class="bf-block">
+<!-- ============ Section 5: unity-gain op-amp buffer (reads the design in section 6) ============ -->
+<section id="opamp" class="page" hidden>
   <div class="intro">
-    <h1>Part A: Unity-Gain Op-Amp Buffer — From Ideal Follower to Ringing &amp; Oscillation</h1>
+    <h1>Unity-Gain Op-Amp Buffer — From Ideal Follower to Ringing &amp; Oscillation</h1>
     <p class="goal">V<sub>+</sub> = V<sub>in</sub> and V<sub>−</sub> = V<sub>out</sub>, so V<sub>out</sub> = A(s)(V<sub>+</sub> − V<sub>−</sub>) gives H<sub>CL</sub> = A / (1 + A). Where |A| = 1, the denominator is 1 + 1∠φ<sub>u</sub>.</p>
     <ol class="steps">
       <li>Inspect the unity-gain feedback loop</li>
       <li>Test Phase = −180° at Gain = 1 (Division by Zero!)</li>
-      <li>Compare Uncompensated (X, Y) vs. −135° Target</li>
+      <li>Compare the Uncompensated Amplifier vs. −135° Target</li>
       <li>Observe the closed-loop Step Response ringing &amp; oscillation</li>
     </ol>
   </div>
@@ -297,7 +296,7 @@
       <div class="bf-presets" id="bf-presets" role="group" aria-label="Open-loop presets">
         <button type="button" data-preset="1"><b>1. Single-Pole Op-Amp</b><small>Phase at f<sub>u</sub> ≈ −90° → unconditionally stable, no overshoot</small></button>
         <button type="button" data-preset="2"><b>2. Well-Compensated Op-Amp</b><small>Phase at f<sub>u</sub> = −135° target → clean step response</small></button>
-        <button type="button" data-preset="3"><b>3. Uncompensated 2-Pole Op-Amp</b><small>Uses your X, Y from below → phase ≈ −168.5° (X = 0, Y = 1), severe ringing!</small></button>
+        <button type="button" data-preset="3"><b>3. Uncompensated 2-Pole Op-Amp</b><small>Uses your amplifier from the Amplifier Compensation tab → phase ≈ −168.5° (X = 0, g<sub>m</sub> = 1 mS, R<sub>2</sub> = 100 kΩ), severe ringing!</small></button>
         <button type="button" data-preset="4"><b>4. Phase Crosses −180° at Gain = 1</b><small>1 + A(jω<sub>u</sub>) = 0 → self-sustaining oscillator!</small></button>
       </div>
       <div class="bf-slider" id="bf-slider">
@@ -307,7 +306,7 @@
         <div class="bf-scale"><span>−90°</span><span>−135° target</span><span>−180° critical</span><span>−195°</span></div>
       </div>
       <div class="bf-live-row">
-        <button type="button" class="chip" id="bf-live">Load live design from Amplifier Compensation below ↓</button>
+        <button type="button" class="chip" id="bf-live">Load live design from the Amplifier Compensation tab</button>
       </div>
       <p id="bf-source" class="hint"></p>
       <svg id="bf-phasor" viewBox="0 0 480 250" role="img" aria-label="Phasor diagram at the unity-gain frequency: A on the unit circle and the vector 1 + A from minus one"></svg>
@@ -328,11 +327,13 @@
       <p id="bf-poles" class="bf-poles"></p>
     </div>
   </div>
-  </div>
+</section>
 
+<!-- ============ Section 6: amplifier compensation ============ -->
+<section id="amp" class="page" hidden>
   <div class="intro">
     <h1>Amplifier Compensation</h1>
-    <p class="goal">Adjust the compensation branch. Your goal: where the gain reaches 1 (0 dB), the phase should be −135° or higher.</p>
+    <p class="goal">Set g<sub>m</sub> and R<sub>2</sub>, then adjust the compensation branch. Your goal: where the gain reaches 1 (0 dB), the phase should be −135° or higher.</p>
     <ol class="steps">
       <li>Look at the uncompensated response</li>
       <li>Try C<sub>c</sub> = 10 pF, then 20 pF</li>
@@ -349,9 +350,10 @@
       <div class="amp-controls">
         <div class="amp-row">
           <label><span>X</span><select id="am-x" aria-label="X"></select></label>
-          <label><span>Y</span><select id="am-y" aria-label="Y"></select></label>
+          <label><span>g<sub>m</sub></span><input id="am-gm" type="number" min="0" step="any" inputmode="decimal" aria-label="Transconductance gm in mS"><em>mS</em></label>
+          <label><span>R<sub>2</sub></span><input id="am-r2" type="number" min="0" step="any" inputmode="decimal" aria-label="Resistor R2 in kΩ"><em>kΩ</em></label>
           <span class="spacer"></span>
-          <button type="button" class="chip" id="am-reset" title="Compensation branch off, Cc = 10 pF, Rz = 0">Reset</button>
+          <button type="button" class="chip" id="am-reset" title="gm = 1 mS, R2 = 100 kΩ, compensation branch off, Cc = 10 pF, Rz = 0">Reset</button>
         </div>
         <div class="amp-row">
           <span class="bar-label">Compensation branch</span>
@@ -383,7 +385,7 @@
   <div class="card wide">
     <div class="trial-head"><h2>Trials</h2><button type="button" class="chip" id="am-save">Save trial</button><button type="button" class="chip" id="am-clear">Clear</button></div>
     <div class="trial-wrap"><table class="trials">
-      <thead><tr><th>#</th><th>X, Y</th><th>C<sub>c</sub></th><th>R<sub>z</sub></th><th>Gain = 1 at</th><th>Phase there</th><th>Target</th></tr></thead>
+      <thead><tr><th>#</th><th>X, g<sub>m</sub>, R<sub>2</sub></th><th>C<sub>c</sub></th><th>R<sub>z</sub></th><th>Gain = 1 at</th><th>Phase there</th><th>Target</th></tr></thead>
       <tbody id="am-trials"></tbody>
     </table></div>
   </div>
@@ -396,7 +398,7 @@
 // Tab switching via the URL hash so each section can be linked directly.
 (function () {
   function show() {
-    var id = ({ '#sandbox': 'sandbox', '#amp': 'amp', '#bullseye': 'bullseye', '#smith': 'smith' })[location.hash] || 'pole-zero';
+    var id = ({ '#sandbox': 'sandbox', '#opamp': 'opamp', '#amp': 'amp', '#bullseye': 'bullseye', '#smith': 'smith' })[location.hash] || 'pole-zero';
     document.querySelectorAll('.page').forEach(function (p) { p.hidden = p.id !== id; });
     document.querySelectorAll('[data-tab]').forEach(function (a) { a.classList.toggle('on', a.dataset.tab === id); });
   }

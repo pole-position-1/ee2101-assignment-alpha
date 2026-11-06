@@ -310,7 +310,6 @@ canvas.amp-plot { height: 215px; }
   .amp-roots { grid-template-columns: 1fr; }
 }
 /* ---------- unity-gain buffer ---------- */
-.bf-block { margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
 #bf-schem, #bf-phasor, #bf-splane { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 #bf-phasor { margin-top: 10px; }
 #bf-splane { margin-top: 12px; }
